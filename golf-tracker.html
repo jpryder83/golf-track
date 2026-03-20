@@ -1447,21 +1447,33 @@ function renderGroupHome(root) {
           <div>
             <div style="font-family:'Playfair Display',serif;font-size:20px;color:#b8ddc4;">${group.name}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:3px;">
-              ${members.length} member${members.length!==1?'s':''} &nbsp;·&nbsp;
               Code: <strong style="color:var(--green-accent);letter-spacing:0.1em;">${state.groupCode}</strong>
             </div>
           </div>
           <button class="btn-sm" id="copy-group-btn" style="flex-shrink:0;">📋 Share</button>
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;">
-          ${members.map(m => `
-            <span style="font-size:12px;padding:4px 12px;border-radius:20px;
-              background:${m.name===state.groupPlayerName?'rgba(34,197,94,0.15)':'rgba(255,255,255,0.06)'};
-              border:1px solid ${m.name===state.groupPlayerName?'rgba(34,197,94,0.3)':'var(--border)'};
-              color:${m.name===state.groupPlayerName?'var(--green-accent)':'var(--muted)'};">
-              ${m.name}${m.name===state.groupPlayerName?' ✓':''}
-            </span>
-          `).join('')}
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="section-label">Members</div>
+        ${members.map(m => `
+          <div class="player-row">
+            <div class="player-name">
+              ${m.name}
+              ${m.name === state.groupPlayerName ? '<span style="font-size:11px;color:var(--green-accent);margin-left:4px;">(you)</span>' : ''}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="player-hcp">HCP ${m.handicap ?? 0}</span>
+            </div>
+          </div>
+        `).join('')}
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+          <div class="section-label" style="margin-bottom:8px;">Add Member</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <input type="text" id="add-member-name" placeholder="Name" style="flex:1;min-width:100px;">
+            <input type="number" id="add-member-hcp" placeholder="HCP" min="0" max="54" step="0.1" style="width:66px;">
+            <button class="btn-sm" id="add-member-btn" style="padding:5px 14px;">+ Add</button>
+          </div>
         </div>
       </div>
 
@@ -1495,6 +1507,24 @@ function renderGroupHome(root) {
   document.getElementById('copy-group-btn').onclick = () => {
     navigator.clipboard.writeText(joinUrl.toString()).then(()=>toast('Group link copied!')).catch(()=>toast('Copy failed','error'));
   };
+
+  document.getElementById('add-member-btn').onclick = async () => {
+    const nameEl = document.getElementById('add-member-name');
+    const hcpEl = document.getElementById('add-member-hcp');
+    const name = nameEl.value.trim();
+    const hcp = parseFloat(hcpEl.value) || 0;
+    if (!name) { toast('Enter a name', 'error'); return; }
+    if (members.find(m => m.name.toLowerCase() === name.toLowerCase())) {
+      toast('Already in group', 'error'); return;
+    }
+    const memberId = 'p_' + Date.now();
+    await update(ref(db, `${groupPath(state.groupCode)}/members`), {
+      [memberId]: { name, handicap: hcp, tee: 'yellow', id: memberId, joinedAt: Date.now() }
+    });
+    nameEl.value = ''; hcpEl.value = '';
+    toast(`${name} added to group!`);
+  };
+
   document.getElementById('new-group-round-btn').onclick = () => { state.view = 'new-group-round'; render(); };
   document.getElementById('leave-group-btn').onclick = () => {
     if (groupUnsubscribe) groupUnsubscribe();
