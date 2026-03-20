@@ -648,11 +648,15 @@ async function joinRound(code, playerName) {
 function subscribeToRound(code) {
   if (unsubscribe) { off(ref(db, roomPath(code))); }
   const r = ref(db, roomPath(code));
+  let prevStatus = null;
   onValue(r, (snap) => {
     if (!snap.exists()) return;
-    state.round = snap.val();
+    const newData = snap.val();
+    const statusChanged = prevStatus !== newData.status;
+    prevStatus = newData.status;
+    state.round = newData;
     if (state.round.status === 'scoring' && state.view === 'setup') state.view = 'scoring';
-    if (state.round.status === 'complete' && state.view !== 'leaderboard') state.view = 'leaderboard';
+    if (state.round.status === 'complete' && statusChanged) state.view = 'leaderboard';
     render();
   });
   unsubscribe = () => off(r);
