@@ -817,6 +817,17 @@ function subscribeToRound(code) {
   unsubscribe = () => off(r);
 }
 
+function goBackFromRound() {
+  if (unsubscribe) unsubscribe();
+  const url = new URL(window.location);
+  url.searchParams.delete('room');
+  window.history.replaceState({}, '', url);
+  state.roomCode = null; state.playerName = null; state.round = null;
+  state.currentHole = 1; state.editingHoles = false;
+  state.view = state.groupCode ? 'group-home' : 'join';
+  render();
+}
+
 function updateURL(code) {
   const url = new URL(window.location);
   url.searchParams.set('room', code);
@@ -1027,9 +1038,10 @@ function renderSetup(root) {
         <button class="btn btn-primary" id="start-round-btn">Start Round →</button>
       ` : `
         <div style="text-align:center;font-size:13px;color:var(--muted);padding:16px;">
-          Waiting for the round organiser to start...
+          Waiting for someone to start the round...
         </div>
       `}
+      <button class="btn btn-secondary mt-8" id="back-btn">← ${state.groupCode ? 'Back to Group' : 'Back to Home'}</button>
     </div>
   `;
 
@@ -1070,6 +1082,8 @@ function renderSetup(root) {
       toast(`${name} added!`);
     };
   }
+
+  document.getElementById('back-btn').onclick = () => goBackFromRound();
 
   if (state.editingHoles) bindHoleEditorEvents(holes);
 
@@ -1174,6 +1188,7 @@ function renderScoring(root) {
   root.innerHTML = `
     <div class="fade-in">
       <div class="nav">
+        <button class="nav-btn" id="nav-back">← ${state.groupCode ? 'Group' : 'Home'}</button>
         <button class="nav-btn active">Scoring</button>
         <button class="nav-btn" id="nav-lb">Leaderboard</button>
       </div>
@@ -1223,6 +1238,7 @@ function renderScoring(root) {
 
   document.getElementById('prev-hole').onclick = () => { if(state.currentHole>1){state.currentHole--;render();} };
   document.getElementById('next-hole').onclick = () => { if(state.currentHole<18){state.currentHole++;render();} };
+  document.getElementById('nav-back').onclick = () => goBackFromRound();
   document.getElementById('nav-lb').onclick = () => { state.view='leaderboard'; render(); };
   document.getElementById('finish-btn').onclick = async () => {
     await update(ref(db, roomPath(state.roomCode)), { status: 'complete' });
@@ -1329,6 +1345,7 @@ function renderLeaderboard(root) {
   root.innerHTML = `
     <div class="fade-in">
       <div class="nav">
+        <button class="nav-btn" id="nav-back">← ${state.groupCode ? 'Group' : 'Home'}</button>
         <button class="nav-btn" id="nav-scoring">Scoring</button>
         <button class="nav-btn active">Leaderboard</button>
       </div>
@@ -1413,6 +1430,7 @@ function renderLeaderboard(root) {
 
   const navScoring = document.getElementById('nav-scoring');
   if (navScoring) navScoring.onclick = () => { state.view='scoring'; render(); };
+  document.getElementById('nav-back').onclick = () => goBackFromRound();
   document.getElementById('new-round-btn').onclick = () => {
     if (unsubscribe) unsubscribe();
     const url = new URL(window.location);
@@ -1501,7 +1519,7 @@ function renderGroupHome(root) {
         </div>
       `).join('')}
 
-      <button class="btn btn-secondary mt-20" id="leave-group-btn">← Leave Group</button>
+      <button class="btn btn-secondary mt-20" id="leave-group-btn">← Back to Home</button>
     </div>
   `;
 
