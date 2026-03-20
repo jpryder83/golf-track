@@ -293,6 +293,13 @@
   }
   input[type=date]:focus { border-color: rgba(34,197,94,0.4); }
 
+  /* Inline HCP edit in score cards */
+  .hcp-inline {
+    width: 38px !important; padding: 1px 4px !important; font-size: 11px !important;
+    text-align: center !important; height: auto !important; display: inline-block !important;
+    border-radius: 4px !important; vertical-align: middle;
+  }
+
   @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
   .fade-in { animation: fadeIn 0.25s ease; }
 </style>
@@ -1300,7 +1307,8 @@ function renderScoreEntry(player, hole, scores) {
           ${player.name===state.playerName?'<span style="font-size:10px;color:var(--green-accent);margin-left:4px;">(you)</span>':''}
         </div>
         <div class="score-hcp-note">
-          HCP ${player.handicap}
+          HCP <input type="number" class="hcp-inline" id="hcp-inline-${player.id}"
+            value="${player.handicap}" min="0" max="54" step="0.1">
           ${teeData ? ` &nbsp;·&nbsp; <span style="color:${teeData.color};">■</span> ${teeData.label}` : ''}
           ${yards ? ` · ${yards}y` : ''}
           ${extraStroke ? ' · extra stroke' : ''}
@@ -1334,6 +1342,15 @@ function bindScoreEntries(players, hole, scores) {
     inp.oninput = (e) => setScore(e.target.value);
     if (dec) dec.onclick = () => { const cur = parseInt(inp.value); setScore(isNaN(cur) ? hole.par - 1 : cur - 1); };
     if (inc) inc.onclick = () => { const cur = parseInt(inp.value); setScore(isNaN(cur) ? hole.par : cur + 1); };
+
+    const hcpInp = document.getElementById(`hcp-inline-${player.id}`);
+    if (hcpInp) {
+      hcpInp.onchange = async (e) => {
+        const n = parseFloat(e.target.value);
+        if (isNaN(n) || n < 0 || n > 54) return;
+        await update(ref(db, `${roomPath(state.roomCode)}/players/${player.id}`), { handicap: n });
+      };
+    }
   });
 }
 
