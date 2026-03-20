@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Scorecard</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   :root {
     --green-deep: #0d2b1a;
@@ -305,6 +306,17 @@ let state = {
   configDone: false,
 };
 
+// ── Session persistence (localStorage) ──
+function saveSession(roomCode, playerName) {
+  localStorage.setItem('golf_session', JSON.stringify({ roomCode, playerName, savedAt: Date.now() }));
+}
+function loadSession() {
+  try { return JSON.parse(localStorage.getItem('golf_session')); } catch { return null; }
+}
+function clearSession() {
+  localStorage.removeItem('golf_session');
+}
+
 // ── Firebase init ──
 function tryInitFirebase() {
   if (!FIREBASE_CONFIG.apiKey) return false;
@@ -417,10 +429,23 @@ function renderConfigScreen(root) {
 
 // ── Join screen ──
 function renderJoin(root) {
+  const session = loadSession();
   root.innerHTML = `
     <div class="join-screen fade-in">
       <div class="join-title">⛳ Scorecard</div>
       <div class="join-sub">Real-time golf scoring for your group</div>
+
+      ${session ? `
+        <div class="card" style="text-align:left;border-color:rgba(212,168,67,0.3);background:rgba(212,168,67,0.06);margin-bottom:16px;">
+          <div class="section-label">Resume Last Round</div>
+          <div style="font-size:13px;margin-bottom:12px;">
+            Room <strong style="color:var(--gold);letter-spacing:0.1em;">${session.roomCode}</strong>
+            &nbsp;·&nbsp; Playing as <strong>${session.playerName}</strong>
+          </div>
+          <button class="btn btn-primary" id="resume-btn" style="background:var(--gold);color:#0d2b1a;box-shadow:0 4px 20px rgba(212,168,67,0.2);">Resume Round →</button>
+        </div>
+        <div class="or-divider">or start fresh</div>
+      ` : ''}
 
       <div class="card" style="text-align:left;">
         <div class="section-label">Start a New Round</div>
@@ -440,6 +465,11 @@ function renderJoin(root) {
       </div>
     </div>
   `;
+
+  // Resume button
+  if (session) {
+    document.getElementById('resume-btn').onclick = () => joinRound(session.roomCode, session.playerName);
+  }
 
   // Prefill from URL param
   const params = new URLSearchParams(window.location.search);
@@ -489,6 +519,7 @@ async function createRound(playerName, courseName) {
     state.view = 'setup';
     subscribeToRound(code);
     updateURL(code);
+    saveSession(code, playerName);
     toast(`Round created! Share code: ${code}`);
     render();
   } catch(e) {
@@ -527,6 +558,7 @@ async function joinRound(code, playerName) {
     state.view = data.status === 'scoring' ? 'scoring' : data.status === 'complete' ? 'leaderboard' : 'setup';
     subscribeToRound(code);
     updateURL(code);
+    saveSession(code, playerName);
     render();
   } catch(e) {
     toast('Failed to join. Check your connection.', 'error');
@@ -569,9 +601,8 @@ function renderSetup(root) {
         <div class="section-label">Share This Round</div>
         <div style="text-align:center;">
           <div class="room-code-display" id="share-code">${state.roomCode}</div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">
-            Others open this page and enter the code above
-          </div>
+          <div id="qr-code" style="display:inline-block;background:#e8f0eb;padding:8px;border-radius:10px;margin:10px 0 6px;"></div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Scan to join · or share the code above</div>
           <button class="btn-sm" id="copy-link-btn">📋 Copy Join Link</button>
         </div>
       </div>
@@ -611,9 +642,20 @@ function renderSetup(root) {
             </div>
           `).join('')}
         </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:8px;">
-          Others join by entering the room code on this page
-        </div>
+        ${isOwner ? `
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+            <div class="section-label" style="margin-bottom:8px;">Add Player (on their behalf)</div>
+            <div style="display:flex;gap:8px;">
+              <input type="text" id="add-player-name" placeholder="Player name" style="flex:1;">
+              <input type="number" id="add-player-hcp" placeholder="HCP" min="0" max="54" step="0.1" style="width:72px;">
+              <button class="btn-sm" id="add-player-btn" style="padding:5px 14px;">+ Add</button>
+            </div>
+          </div>
+        ` : `
+          <div style="font-size:11px;color:var(--muted);margin-top:8px;">
+            Others join by entering the room code on this page
+          </div>
+        `}
       </div>
 
       ${isOwner ? `
@@ -626,16 +668,40 @@ function renderSetup(root) {
     </div>
   `;
 
+  // QR code
+  const joinUrl = new URL(window.location.href);
+  joinUrl.searchParams.set('room', state.roomCode);
+  const qrDiv = document.getElementById('qr-code');
+  if (qrDiv && typeof QRCode !== 'undefined') {
+    new QRCode(qrDiv, { text: joinUrl.toString(), width: 120, height: 120, colorDark: '#0d2b1a', colorLight: '#e8f0eb' });
+  }
+
   document.getElementById('copy-link-btn').onclick = () => {
-    const url = new URL(window.location);
-    url.searchParams.set('room', state.roomCode);
-    navigator.clipboard.writeText(url.toString()).then(()=>toast('Link copied!')).catch(()=>toast('Copy failed','error'));
+    navigator.clipboard.writeText(joinUrl.toString()).then(()=>toast('Link copied!')).catch(()=>toast('Copy failed','error'));
   };
 
   if (isOwner) {
     document.getElementById('start-round-btn').onclick = startRound;
     const toggleBtn = document.getElementById('toggle-holes-btn');
     if (toggleBtn) toggleBtn.onclick = () => { state.editingHoles = !state.editingHoles; render(); };
+
+    document.getElementById('add-player-btn').onclick = async () => {
+      const nameEl = document.getElementById('add-player-name');
+      const hcpEl = document.getElementById('add-player-hcp');
+      const name = nameEl.value.trim();
+      const hcp = parseFloat(hcpEl.value) || 0;
+      if (!name) { toast('Enter a player name', 'error'); return; }
+      if (players.find(p => p.name.toLowerCase() === name.toLowerCase())) {
+        toast('Player already in round', 'error'); return;
+      }
+      const playerId = 'p_' + Date.now();
+      await update(ref(db, `${roomPath(state.roomCode)}/players`), {
+        [playerId]: { name, handicap: hcp, id: playerId, joinedAt: Date.now() }
+      });
+      nameEl.value = '';
+      hcpEl.value = '';
+      toast(`${name} added!`);
+    };
   }
 
   if (state.editingHoles) bindHoleEditorEvents(holes);
@@ -954,6 +1020,7 @@ function renderLeaderboard(root) {
   if (navScoring) navScoring.onclick = () => { state.view='scoring'; render(); };
   document.getElementById('new-round-btn').onclick = () => {
     if (unsubscribe) unsubscribe();
+    clearSession();
     state = { view:'join', roomCode:null, playerName:null, round:null, currentHole:1, editingHoles:false };
     const url = new URL(window.location);
     url.searchParams.delete('room');
