@@ -989,7 +989,7 @@ function renderScoreEntry(player, hole, scores) {
       </div>
       <div class="score-controls">
         ${lbl ? `<span class="score-badge" style="color:${lbl.color};background:${lbl.color}22;">${lbl.label}</span>` : ''}
-        <button class="adj-btn" id="dec-${player.id}" ${(!s||s<=1)?'disabled':''}>−</button>
+        <button class="adj-btn" id="dec-${player.id}" ${(s!=null&&s<=1)?'disabled':''}>−</button>
         <input type="number" class="score-input" id="inp-${player.id}"
           value="${s??''}" placeholder="${hole.par}" min="1" max="15">
         <button class="adj-btn" id="inc-${player.id}">+</button>
