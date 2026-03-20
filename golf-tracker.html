@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Scorecard</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green-deep: #0d2b1a;
+    --green-mid: #164d2e;
+    --green-bright: #1a7a40;
+    --green-accent: #22c55e;
+    --gold: #d4a843;
+    --cream: #e8f0eb;
+    --muted: rgba(232,240,235,0.45);
+    --card: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.09);
+    --danger: #ef4444;
+    --birdie: #3b82f6;
+    --eagle: #10b981;
+    --bogey: #f97316;
+    --double: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    min-height: 100vh;
+    background: linear-gradient(160deg, var(--green-deep) 0%, #1a3d28 50%, #0d2b1a 100%);
+    font-family: 'DM Sans', sans-serif;
+    color: var(--cream);
+    overscroll-behavior: none;
+  }
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    opacity: 0.6;
+  }
+
+  #app { position: relative; z-index: 1; max-width: 680px; margin: 0 auto; padding: 0 16px 60px; }
+
+  /* Header */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 0 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+  }
+  .logo { font-family: 'Playfair Display', serif; font-size: 18px; letter-spacing: 0.08em; color: #b8ddc4; display: flex; align-items: center; gap: 10px; }
+  .logo-icon { font-size: 20px; }
+  .room-badge {
+    font-size: 11px; letter-spacing: 0.12em; color: var(--gold);
+    background: rgba(212,168,67,0.12); border: 1px solid rgba(212,168,67,0.25);
+    padding: 4px 10px; border-radius: 20px; font-weight: 500;
+  }
+
+  /* Nav tabs */
+  .nav { display: flex; gap: 6px; margin-bottom: 24px; }
+  .nav-btn {
+    flex: 1; padding: 9px 4px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--card); color: var(--muted); font-family: 'DM Sans', sans-serif;
+    font-size: 12px; letter-spacing: 0.06em; cursor: pointer; transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .nav-btn.active { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.35); color: #b8ddc4; }
+
+  /* Cards */
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px; margin-bottom: 14px;
+  }
+  .section-label {
+    font-size: 10px; letter-spacing: 0.14em; color: var(--muted);
+    text-transform: uppercase; margin-bottom: 12px;
+  }
+
+  /* Inputs */
+  input[type=text], input[type=number], select {
+    background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--cream); padding: 10px 12px;
+    font-family: 'DM Sans', sans-serif; font-size: 14px;
+    width: 100%; outline: none; transition: border-color 0.2s;
+  }
+  input:focus, select:focus { border-color: rgba(34,197,94,0.4); }
+  input::placeholder { color: rgba(232,240,235,0.2); }
+  select option { background: #1a3d28; }
+
+  /* Buttons */
+  .btn {
+    width: 100%; padding: 13px; border-radius: 10px; border: none;
+    font-family: 'DM Sans', sans-serif; font-size: 14px; letter-spacing: 0.06em;
+    cursor: pointer; transition: all 0.2s; text-transform: uppercase; font-weight: 500;
+  }
+  .btn-primary { background: var(--green-accent); color: #fff; box-shadow: 0 4px 20px rgba(34,197,94,0.25); }
+  .btn-primary:hover { background: #16a34a; }
+  .btn-secondary { background: var(--card); border: 1px solid var(--border); color: var(--muted); }
+  .btn-secondary:hover { color: var(--cream); border-color: rgba(255,255,255,0.2); }
+  .btn-sm {
+    padding: 5px 12px; font-size: 11px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--card); color: var(--muted); cursor: pointer; font-family: 'DM Sans', sans-serif;
+    letter-spacing: 0.05em; transition: all 0.15s;
+  }
+  .btn-sm:hover { color: var(--cream); }
+
+  /* Player row */
+  .player-row {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px 12px;
+    margin-bottom: 6px;
+  }
+  .player-name { flex: 1; font-size: 15px; }
+  .player-hcp { font-size: 12px; color: var(--muted); }
+  .remove-btn { background: none; border: none; color: rgba(255,100,100,0.4); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; }
+  .remove-btn:hover { color: var(--danger); }
+
+  /* Hole dots */
+  .hole-dots { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin-bottom: 20px; }
+  .hole-dot {
+    width: 30px; height: 30px; border-radius: 50%; border: none;
+    font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif;
+    transition: all 0.15s; color: var(--muted);
+    background: rgba(255,255,255,0.07);
+  }
+  .hole-dot.current { background: var(--green-accent); color: #fff; font-weight: 600; }
+  .hole-dot.complete { background: rgba(34,197,94,0.25); color: #b8ddc4; }
+  .hole-dot.partial { background: rgba(34,197,94,0.1); }
+
+  /* Score entry */
+  .score-card {
+    background: rgba(0,0,0,0.2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .score-card.has-score { border-color: rgba(34,197,94,0.2); }
+  .score-info { flex: 1; }
+  .score-player-name { font-size: 15px; margin-bottom: 2px; }
+  .score-hcp-note { font-size: 11px; color: var(--muted); }
+  .score-controls { display: flex; align-items: center; gap: 6px; }
+  .score-badge {
+    font-size: 10px; padding: 2px 8px; border-radius: 20px;
+    letter-spacing: 0.04em; font-weight: 500;
+  }
+  .adj-btn {
+    width: 34px; height: 40px; border-radius: 7px; border: 1px solid var(--border);
+    background: rgba(255,255,255,0.07); color: var(--cream); font-size: 18px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+  }
+  .adj-btn:hover { background: rgba(255,255,255,0.12); }
+  .adj-btn:disabled { opacity: 0.25; cursor: default; }
+  .score-input {
+    width: 50px !important; height: 40px; text-align: center !important;
+    font-size: 20px !important; padding: 0 !important;
+    font-family: 'Playfair Display', serif !important;
+    color: #b8ddc4 !important;
+  }
+
+  /* Hole nav */
+  .hole-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .hole-arrow {
+    width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--card); color: var(--cream); font-size: 18px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s; flex-shrink: 0;
+  }
+  .hole-arrow:disabled { opacity: 0.25; cursor: default; }
+  .hole-title { flex: 1; text-align: center; }
+  .hole-num { font-family: 'Playfair Display', serif; font-size: 30px; color: #b8ddc4; }
+  .hole-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* Leaderboard */
+  .lb-row {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; margin-bottom: 8px;
+    transition: all 0.2s;
+  }
+  .lb-row.first { background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.25); }
+  .lb-medal { font-size: 22px; width: 28px; text-align: center; flex-shrink: 0; }
+  .lb-player { flex: 1; }
+  .lb-name { font-size: 16px; margin-bottom: 2px; }
+  .lb-detail { font-size: 11px; color: var(--muted); }
+  .lb-score { text-align: right; }
+  .lb-net { font-family: 'Playfair Display', serif; font-size: 24px; }
+  .lb-gross { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* Scorecard table */
+  .sc-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .sc-table th, .sc-table td { padding: 5px 3px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .sc-table th { color: var(--muted); font-weight: 400; }
+  .sc-table .out-col, .sc-table .in-col, .sc-table .tot-col { color: var(--gold); }
+
+  /* Toast */
+  .toast {
+    position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
+    padding: 10px 20px; border-radius: 8px; font-size: 13px; z-index: 9999;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4); transition: opacity 0.3s;
+    white-space: nowrap;
+  }
+  .toast.success { background: #16a34a; color: #fff; }
+  .toast.error { background: var(--danger); color: #fff; }
+
+  /* Join screen */
+  .join-screen { text-align: center; padding: 40px 0; }
+  .join-title { font-family: 'Playfair Display', serif; font-size: 32px; color: #b8ddc4; margin-bottom: 8px; }
+  .join-sub { color: var(--muted); font-size: 14px; margin-bottom: 36px; }
+  .or-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--muted); font-size: 12px; }
+  .or-divider::before, .or-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .room-code-display {
+    font-family: 'Playfair Display', serif; font-size: 42px; letter-spacing: 0.2em;
+    color: var(--gold); text-align: center; padding: 16px;
+    background: rgba(212,168,67,0.08); border: 1px solid rgba(212,168,67,0.2);
+    border-radius: 12px; margin: 12px 0;
+  }
+
+  /* Connection indicator */
+  .conn-dot {
+    width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px;
+  }
+  .conn-dot.online { background: var(--green-accent); box-shadow: 0 0 6px rgba(34,197,94,0.6); }
+  .conn-dot.offline { background: #ef4444; }
+  .conn-status { font-size: 11px; color: var(--muted); display: flex; align-items: center; }
+
+  /* Sync pulse */
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .syncing { animation: pulse 1s infinite; }
+
+  /* Running totals */
+  .totals-row { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .totals-row:last-child { border-bottom: none; }
+
+  /* Hole edit */
+  .hole-edit-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 12px; }
+  .hole-edit-num { width: 22px; text-align: right; color: var(--muted); flex-shrink: 0; }
+
+  /* Firebase config screen */
+  .config-screen { padding: 8px 0; }
+  .config-field { margin-bottom: 12px; }
+  .config-label { font-size: 11px; color: var(--muted); letter-spacing: 0.06em; margin-bottom: 5px; }
+
+  .mt-8 { margin-top: 8px; }
+  .mt-14 { margin-top: 14px; }
+  .mt-20 { margin-top: 20px; }
+  .gap-8 { gap: 8px; }
+  .flex { display: flex; }
+  .hidden { display: none; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.25s ease; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">
+      <span class="logo-icon">⛳</span>
+      <span>SCORECARD</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="conn-status" id="conn-status">
+        <span class="conn-dot offline" id="conn-dot"></span>
+        <span id="conn-text">Offline</span>
+      </div>
+      <div class="room-badge hidden" id="room-badge"></div>
+    </div>
+  </header>
+
+  <div id="view-root"></div>
+</div>
+
+<div class="toast hidden" id="toast"></div>
+
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, set, get, update, onValue, off, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCdW0Se4LroWiBm0Psc0KY6YYDS-NFJ81s",
+  authDomain: "golf-tracker-f9334.firebaseapp.com",
+  databaseURL: "https://golf-tracker-f9334-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "golf-tracker-f9334",
+  storageBucket: "golf-tracker-f9334.firebasestorage.app",
+  messagingSenderId: "208051337835",
+  appId: "1:208051337835:web:0221e91692bc5b37c10f2e"
+};
+
+const DEFAULT_HOLES = Array.from({length:18},(_,i)=>({
+  hole: i+1,
+  par: [3,4,5,4,4,4,3,5,4, 4,5,3,4,4,5,3,4,5][i] || 4,
+  si: i+1
+}));
+
+let db = null;
+let roundRef = null;
+let unsubscribe = null;
+let state = {
+  view: 'join',       // join | config | setup | scoring | leaderboard
+  roomCode: null,
+  playerName: null,   // this device's player name
+  round: null,        // live Firebase data
+  currentHole: 1,
+  editingHoles: false,
+  configDone: false,
+};
+
+// ── Firebase init ──
+function tryInitFirebase() {
+  if (!FIREBASE_CONFIG.apiKey) return false;
+  try {
+    const app = initializeApp(FIREBASE_CONFIG);
+    db = getDatabase(app);
+    setConnected(true);
+    return true;
+  } catch(e) {
+    console.error(e);
+    return false;
+  }
+}
+
+function setConnected(online) {
+  document.getElementById('conn-dot').className = 'conn-dot ' + (online ? 'online' : 'offline');
+  document.getElementById('conn-text').textContent = online ? 'Live' : 'Offline';
+}
+
+// ── Room code ──
+function genCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:4}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+
+function roomPath(code) { return `rounds/${code}`; }
+
+// ── Toast ──
+let toastTimer;
+function toast(msg, type='success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast ${type} fade-in`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ el.className='toast hidden'; }, 2800);
+}
+
+// ── Render dispatch ──
+function render() {
+  const root = document.getElementById('view-root');
+  root.innerHTML = '';
+
+  // Show room badge
+  const badge = document.getElementById('room-badge');
+  if (state.roomCode && state.view !== 'join' && state.view !== 'config') {
+    badge.textContent = `ROOM ${state.roomCode}`;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+
+  if (!FIREBASE_CONFIG.apiKey) {
+    renderConfigScreen(root);
+  } else if (state.view === 'join') {
+    renderJoin(root);
+  } else if (state.view === 'setup') {
+    renderSetup(root);
+  } else if (state.view === 'scoring') {
+    renderScoring(root);
+  } else if (state.view === 'leaderboard') {
+    renderLeaderboard(root);
+  }
+}
+
+// ── Config screen (shown when no Firebase config) ──
+function renderConfigScreen(root) {
+  root.innerHTML = `
+    <div class="config-screen fade-in">
+      <div class="section-label">Firebase Setup Required</div>
+      <div class="card" style="margin-bottom:16px;">
+        <p style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:14px;">
+          Paste your Firebase config values below to enable real-time shared scoring.
+          See the setup guide for instructions on getting these values.
+        </p>
+        <div class="config-field">
+          <div class="config-label">API KEY</div>
+          <input type="text" id="cfg-apiKey" placeholder="AIza...">
+        </div>
+        <div class="config-field">
+          <div class="config-label">DATABASE URL</div>
+          <input type="text" id="cfg-dbUrl" placeholder="https://your-project-default-rtdb.firebaseio.com">
+        </div>
+        <div class="config-field">
+          <div class="config-label">PROJECT ID</div>
+          <input type="text" id="cfg-projectId" placeholder="your-project-id">
+        </div>
+        <div class="config-field">
+          <div class="config-label">APP ID</div>
+          <input type="text" id="cfg-appId" placeholder="1:123456:web:abc...">
+        </div>
+        <div class="config-field">
+          <div class="config-label">AUTH DOMAIN</div>
+          <input type="text" id="cfg-authDomain" placeholder="your-project.firebaseapp.com">
+        </div>
+        <div class="config-field">
+          <div class="config-label">MESSAGING SENDER ID</div>
+          <input type="text" id="cfg-messagingSenderId" placeholder="123456789">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="cfg-save-btn">Save & Continue</button>
+      <p style="font-size:11px;color:var(--muted);text-align:center;margin-top:12px;">
+        These values are saved only in this file — nothing is sent anywhere else.
+      </p>
+    </div>
+  `;
+  document.getElementById('cfg-save-btn').onclick = () => {
+    toast('To apply your config, open this HTML file in a text editor, find the FIREBASE_CONFIG section near the top, and paste in your values. Then reload the page.', 'error');
+  };
+}
+
+// ── Join screen ──
+function renderJoin(root) {
+  root.innerHTML = `
+    <div class="join-screen fade-in">
+      <div class="join-title">⛳ Scorecard</div>
+      <div class="join-sub">Real-time golf scoring for your group</div>
+
+      <div class="card" style="text-align:left;">
+        <div class="section-label">Start a New Round</div>
+        <input type="text" id="new-course" placeholder="Course name (optional)" style="margin-bottom:10px;">
+        <input type="text" id="new-player" placeholder="Your name">
+        <button class="btn btn-primary mt-14" id="create-btn">Create Round</button>
+      </div>
+
+      <div class="or-divider">or</div>
+
+      <div class="card" style="text-align:left;">
+        <div class="section-label">Join Existing Round</div>
+        <input type="text" id="join-code" placeholder="4-letter room code" maxlength="4"
+          style="text-transform:uppercase;letter-spacing:0.14em;font-size:18px;text-align:center;">
+        <input type="text" id="join-player" placeholder="Your name" style="margin-top:8px;">
+        <button class="btn btn-secondary mt-14" id="join-btn">Join Round →</button>
+      </div>
+    </div>
+  `;
+
+  // Prefill from URL param
+  const params = new URLSearchParams(window.location.search);
+  const codeParam = params.get('room');
+  if (codeParam) {
+    document.getElementById('join-code').value = codeParam.toUpperCase();
+    document.getElementById('join-player').focus();
+  }
+
+  document.getElementById('create-btn').onclick = async () => {
+    const playerName = document.getElementById('new-player').value.trim();
+    const courseName = document.getElementById('new-course').value.trim();
+    if (!playerName) { toast('Enter your name', 'error'); return; }
+    await createRound(playerName, courseName);
+  };
+  document.getElementById('join-btn').onclick = async () => {
+    const code = document.getElementById('join-code').value.trim().toUpperCase();
+    const playerName = document.getElementById('join-player').value.trim();
+    if (!code || code.length !== 4) { toast('Enter a 4-letter room code', 'error'); return; }
+    if (!playerName) { toast('Enter your name', 'error'); return; }
+    await joinRound(code, playerName);
+  };
+  document.getElementById('join-code').oninput = e => {
+    e.target.value = e.target.value.toUpperCase();
+  };
+}
+
+// ── Create round ──
+async function createRound(playerName, courseName) {
+  const code = genCode();
+  const playerId = 'p_' + Date.now();
+  const roundData = {
+    courseName: courseName || '',
+    createdAt: Date.now(),
+    status: 'setup',
+    holes: DEFAULT_HOLES,
+    players: {
+      [playerId]: { name: playerName, handicap: 0, id: playerId, joinedAt: Date.now() }
+    },
+    scores: {},
+  };
+  try {
+    await set(ref(db, roomPath(code)), roundData);
+    state.roomCode = code;
+    state.playerName = playerName;
+    state.round = roundData;
+    state.view = 'setup';
+    subscribeToRound(code);
+    updateURL(code);
+    toast(`Round created! Share code: ${code}`);
+    render();
+  } catch(e) {
+    toast('Failed to create round. Check Firebase config.', 'error');
+    console.error(e);
+  }
+}
+
+// ── Join round ──
+async function joinRound(code, playerName) {
+  try {
+    const snap = await get(ref(db, roomPath(code)));
+    if (!snap.exists()) { toast('Room not found. Check the code.', 'error'); return; }
+    const data = snap.val();
+
+    // Check if player already exists
+    const existing = Object.values(data.players || {}).find(
+      p => p.name.toLowerCase() === playerName.toLowerCase()
+    );
+
+    let playerId;
+    if (existing) {
+      playerId = existing.id;
+      toast(`Welcome back, ${playerName}!`);
+    } else {
+      playerId = 'p_' + Date.now();
+      await update(ref(db, `${roomPath(code)}/players`), {
+        [playerId]: { name: playerName, handicap: 0, id: playerId, joinedAt: Date.now() }
+      });
+      toast(`Joined round!`);
+    }
+
+    state.roomCode = code;
+    state.playerName = playerName;
+    state.round = data;
+    state.view = data.status === 'scoring' ? 'scoring' : data.status === 'complete' ? 'leaderboard' : 'setup';
+    subscribeToRound(code);
+    updateURL(code);
+    render();
+  } catch(e) {
+    toast('Failed to join. Check your connection.', 'error');
+    console.error(e);
+  }
+}
+
+// ── Subscribe ──
+function subscribeToRound(code) {
+  if (unsubscribe) { off(ref(db, roomPath(code))); }
+  const r = ref(db, roomPath(code));
+  onValue(r, (snap) => {
+    if (!snap.exists()) return;
+    state.round = snap.val();
+    if (state.round.status === 'scoring' && state.view === 'setup') state.view = 'scoring';
+    if (state.round.status === 'complete' && state.view !== 'leaderboard') state.view = 'leaderboard';
+    render();
+  });
+  unsubscribe = () => off(r);
+}
+
+function updateURL(code) {
+  const url = new URL(window.location);
+  url.searchParams.set('room', code);
+  window.history.replaceState({}, '', url);
+}
+
+// ── Setup view ──
+function renderSetup(root) {
+  const round = state.round;
+  const players = Object.values(round.players || {});
+  const holes = round.holes || DEFAULT_HOLES;
+  const isOwner = players[0]?.name === state.playerName || players.length === 0;
+  const totalPar = holes.reduce((a,h)=>a+h.par,0);
+  const myPlayer = players.find(p=>p.name===state.playerName);
+
+  root.innerHTML = `
+    <div class="fade-in">
+      <div class="card">
+        <div class="section-label">Share This Round</div>
+        <div style="text-align:center;">
+          <div class="room-code-display" id="share-code">${state.roomCode}</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">
+            Others open this page and enter the code above
+          </div>
+          <button class="btn-sm" id="copy-link-btn">📋 Copy Join Link</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div class="section-label" style="margin-bottom:0;">Course &amp; Pars</div>
+          ${isOwner ? `<button class="btn-sm" id="toggle-holes-btn">${state.editingHoles?'Done':'Edit Pars / SI'}</button>` : ''}
+        </div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:8px;">
+          ${round.courseName || 'No course name'} · Par ${totalPar}
+        </div>
+        <div id="holes-section">
+          ${state.editingHoles ? renderHoleEditor(holes) : `
+            <div style="font-size:12px;color:var(--muted);">
+              ${holes.filter(h=>h.par===3).length} par 3s · 
+              ${holes.filter(h=>h.par===4).length} par 4s · 
+              ${holes.filter(h=>h.par===5).length} par 5s
+            </div>
+          `}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-label">Players</div>
+        <div id="players-list">
+          ${players.map(p => `
+            <div class="player-row">
+              <div class="player-name">${p.name} ${p.name===state.playerName?'<span style="font-size:11px;color:var(--green-accent);">(you)</span>':''}</div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="player-hcp">HCP</span>
+                ${p.name===state.playerName ? `
+                  <input type="number" id="hcp-${p.id}" value="${p.handicap}" min="0" max="54" step="0.1"
+                    style="width:60px;padding:4px 6px;font-size:13px;" oninput="window._updateHcp('${p.id}', this.value)">
+                ` : `<span class="player-hcp">${p.handicap}</span>`}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px;">
+          Others join by entering the room code on this page
+        </div>
+      </div>
+
+      ${isOwner ? `
+        <button class="btn btn-primary" id="start-round-btn">Start Round →</button>
+      ` : `
+        <div style="text-align:center;font-size:13px;color:var(--muted);padding:16px;">
+          Waiting for the round organiser to start...
+        </div>
+      `}
+    </div>
+  `;
+
+  document.getElementById('copy-link-btn').onclick = () => {
+    const url = new URL(window.location);
+    url.searchParams.set('room', state.roomCode);
+    navigator.clipboard.writeText(url.toString()).then(()=>toast('Link copied!')).catch(()=>toast('Copy failed','error'));
+  };
+
+  if (isOwner) {
+    document.getElementById('start-round-btn').onclick = startRound;
+    const toggleBtn = document.getElementById('toggle-holes-btn');
+    if (toggleBtn) toggleBtn.onclick = () => { state.editingHoles = !state.editingHoles; render(); };
+  }
+
+  if (state.editingHoles) bindHoleEditorEvents(holes);
+
+  window._updateHcp = async (playerId, val) => {
+    const n = parseFloat(val);
+    if (isNaN(n) || n < 0 || n > 54) return;
+    await update(ref(db, `${roomPath(state.roomCode)}/players/${playerId}`), { handicap: n });
+  };
+}
+
+function renderHoleEditor(holes) {
+  const front = holes.slice(0,9), back = holes.slice(9);
+  const renderGroup = (group, offset) => group.map((h,i) => `
+    <div class="hole-edit-row">
+      <span class="hole-edit-num">${h.hole}</span>
+      <span style="font-size:10px;color:var(--muted);">Par</span>
+      <select id="par-${offset+i}" style="width:52px;padding:3px 4px;font-size:12px;">
+        ${[3,4,5].map(p=>`<option value="${p}" ${h.par===p?'selected':''}>${p}</option>`).join('')}
+      </select>
+      <span style="font-size:10px;color:var(--muted);">SI</span>
+      <input type="number" id="si-${offset+i}" value="${h.si}" min="1" max="18"
+        style="width:42px;padding:3px 4px;font-size:12px;text-align:center;">
+    </div>
+  `).join('');
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div><div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:0.08em;">FRONT 9</div>${renderGroup(front,0)}</div>
+      <div><div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:0.08em;">BACK 9</div>${renderGroup(back,9)}</div>
+    </div>
+  `;
+}
+
+function bindHoleEditorEvents(holes) {
+  holes.forEach((h, i) => {
+    const parEl = document.getElementById(`par-${i}`);
+    const siEl = document.getElementById(`si-${i}`);
+    if (parEl) parEl.onchange = () => updateHole(i, 'par', parseInt(parEl.value));
+    if (siEl) siEl.onchange = () => updateHole(i, 'si', parseInt(siEl.value));
+  });
+}
+
+async function updateHole(idx, field, val) {
+  const holes = [...(state.round.holes || DEFAULT_HOLES)];
+  holes[idx] = { ...holes[idx], [field]: val };
+  await update(ref(db, roomPath(state.roomCode)), { holes });
+}
+
+async function startRound() {
+  await update(ref(db, roomPath(state.roomCode)), { status: 'scoring' });
+  state.view = 'scoring';
+  state.currentHole = 1;
+  render();
+}
+
+// ── Scoring view ──
+function renderScoring(root) {
+  const round = state.round;
+  const players = Object.values(round.players || {});
+  const holes = round.holes || DEFAULT_HOLES;
+  const scores = round.scores || {};
+  const hole = holes[state.currentHole - 1];
+  const totalPar = holes.reduce((a,h)=>a+h.par,0);
+
+  // Dot status
+  const dotClass = (h) => {
+    const all = players.every(p => (scores[p.id]||{})[h.hole] != null);
+    const some = players.some(p => (scores[p.id]||{})[h.hole] != null);
+    if (h.hole === state.currentHole) return 'hole-dot current';
+    if (all) return 'hole-dot complete';
+    if (some) return 'hole-dot partial';
+    return 'hole-dot';
+  };
+
+  // Totals
+  const totals = players.map(p => {
+    let gross=0, net=0, played=0;
+    holes.forEach(h => {
+      const s = (scores[p.id]||{})[h.hole];
+      if (s != null) { gross+=s; net+=(s - h.par - calcExtraStroke(p.handicap, h.si)); played++; }
+    });
+    return { ...p, gross, net, played };
+  }).sort((a,b)=>a.net-b.net);
+
+  root.innerHTML = `
+    <div class="fade-in">
+      <div class="nav">
+        <button class="nav-btn active">Scoring</button>
+        <button class="nav-btn" id="nav-lb">Leaderboard</button>
+      </div>
+
+      <div class="hole-nav">
+        <button class="hole-arrow" id="prev-hole" ${state.currentHole===1?'disabled':''}>←</button>
+        <div class="hole-title">
+          <div class="hole-num">Hole ${state.currentHole}</div>
+          <div class="hole-meta">Par ${hole.par} &nbsp;·&nbsp; SI ${hole.si}</div>
+        </div>
+        <button class="hole-arrow" id="next-hole" ${state.currentHole===18?'disabled':''}>→</button>
+      </div>
+
+      <div class="hole-dots">
+        ${holes.map(h => `<button class="hole-dot ${dotClass(h).replace('hole-dot ','').replace('hole-dot','').trim()}" 
+          id="dot-${h.hole}" onclick="window._goHole(${h.hole})">${h.hole}</button>`).join('')}
+      </div>
+
+      <div id="score-entries">
+        ${players.map(p => renderScoreEntry(p, hole, scores)).join('')}
+      </div>
+
+      <div class="card mt-14">
+        <div class="section-label">Running Totals</div>
+        ${totals.map(p => `
+          <div class="totals-row">
+            <span>${p.name} ${p.name===state.playerName?'<span style="font-size:10px;color:var(--green-accent);">(you)</span>':''}</span>
+            <span style="color:var(--muted);">
+              ${p.played > 0 ? `${p.gross} gross · <span style="color:${p.net<0?'#10b981':p.net===0?'var(--cream)':'#f97316'}">${p.net>=0?'+'+p.net:p.net}</span> net` : '—'}
+            </span>
+          </div>
+        `).join('')}
+      </div>
+
+      <button class="btn btn-secondary mt-14" id="finish-btn">View Final Leaderboard →</button>
+    </div>
+  `;
+
+  // Bind holes dots properly
+  holes.forEach(h => {
+    const dot = document.getElementById(`dot-${h.hole}`);
+    if (dot) {
+      dot.className = dotClass(h);
+      dot.onclick = () => { state.currentHole = h.hole; render(); };
+    }
+  });
+
+  document.getElementById('prev-hole').onclick = () => { if(state.currentHole>1){state.currentHole--;render();} };
+  document.getElementById('next-hole').onclick = () => { if(state.currentHole<18){state.currentHole++;render();} };
+  document.getElementById('nav-lb').onclick = () => { state.view='leaderboard'; render(); };
+  document.getElementById('finish-btn').onclick = async () => {
+    await update(ref(db, roomPath(state.roomCode)), { status: 'complete' });
+    state.view = 'leaderboard'; render();
+  };
+
+  window._goHole = (n) => { state.currentHole=n; render(); };
+  bindScoreEntries(players, hole, scores);
+}
+
+function calcExtraStroke(handicap, si) {
+  const h = Math.round(handicap);
+  return h >= si ? 1 : 0;
+}
+
+function scoreLabel(diff) {
+  if (diff <= -3) return { label:'Albatross', color:'var(--gold)' };
+  if (diff === -2) return { label:'Eagle', color:'var(--eagle)' };
+  if (diff === -1) return { label:'Birdie', color:'var(--birdie)' };
+  if (diff === 0)  return { label:'Par', color:'var(--muted)' };
+  if (diff === 1)  return { label:'Bogey', color:'var(--bogey)' };
+  if (diff === 2)  return { label:'Double', color:'var(--double)' };
+  return { label:`+${diff}`, color:'var(--double)' };
+}
+
+function renderScoreEntry(player, hole, scores) {
+  const s = (scores[player.id]||{})[hole.hole];
+  const extraStroke = calcExtraStroke(player.handicap, hole.si);
+  const diff = s != null ? (s - hole.par - extraStroke) : null;
+  const lbl = diff != null ? scoreLabel(diff) : null;
+  return `
+    <div class="score-card ${s!=null?'has-score':''}" id="sc-${player.id}">
+      <div class="score-info">
+        <div class="score-player-name">${player.name}${extraStroke?` <span style="color:var(--gold);font-size:11px;">●</span>`:''}
+          ${player.name===state.playerName?'<span style="font-size:10px;color:var(--green-accent);margin-left:4px;">(you)</span>':''}
+        </div>
+        <div class="score-hcp-note">HCP ${player.handicap}${extraStroke?' · extra stroke':''}</div>
+      </div>
+      <div class="score-controls">
+        ${lbl ? `<span class="score-badge" style="color:${lbl.color};background:${lbl.color}22;">${lbl.label}</span>` : ''}
+        <button class="adj-btn" id="dec-${player.id}" ${(!s||s<=1)?'disabled':''}>−</button>
+        <input type="number" class="score-input" id="inp-${player.id}"
+          value="${s??''}" placeholder="${hole.par}" min="1" max="15">
+        <button class="adj-btn" id="inc-${player.id}">+</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindScoreEntries(players, hole, scores) {
+  players.forEach(player => {
+    const s = (scores[player.id]||{})[hole.hole];
+    const inp = document.getElementById(`inp-${player.id}`);
+    const dec = document.getElementById(`dec-${player.id}`);
+    const inc = document.getElementById(`inc-${player.id}`);
+    if (!inp) return;
+
+    const setScore = async (val) => {
+      const n = parseInt(val);
+      if (!val || isNaN(n) || n<1 || n>15) return;
+      await update(ref(db, `${roomPath(state.roomCode)}/scores/${player.id}`), { [hole.hole]: n });
+    };
+
+    inp.oninput = (e) => setScore(e.target.value);
+    if (dec) dec.onclick = () => { const cur = parseInt(inp.value)||hole.par; if(cur>1) setScore(cur-1); };
+    if (inc) inc.onclick = () => { const cur = parseInt(inp.value)||hole.par; setScore(cur+1); };
+  });
+}
+
+// ── Leaderboard ──
+function renderLeaderboard(root) {
+  const round = state.round;
+  const players = Object.values(round.players || {});
+  const holes = round.holes || DEFAULT_HOLES;
+  const scores = round.scores || {};
+  const totalPar = holes.reduce((a,h)=>a+h.par,0);
+
+  const lb = players.map(p => {
+    let gross=0, net=0, played=0, frontGross=0, backGross=0;
+    holes.forEach((h,i) => {
+      const s = (scores[p.id]||{})[h.hole];
+      if (s != null) {
+        played++;
+        gross+=s;
+        net+=(s - h.par - calcExtraStroke(p.handicap, h.si));
+        if(i<9) frontGross+=s; else backGross+=s;
+      }
+    });
+    return { ...p, gross, net, played, frontGross, backGross };
+  }).sort((a,b)=>a.net-b.net);
+
+  const medals = ['🥇','🥈','🥉'];
+
+  root.innerHTML = `
+    <div class="fade-in">
+      <div class="nav">
+        <button class="nav-btn" id="nav-scoring">Scoring</button>
+        <button class="nav-btn active">Leaderboard</button>
+      </div>
+
+      <div style="text-align:center;margin-bottom:20px;">
+        <div style="font-family:'Playfair Display',serif;font-size:22px;color:#b8ddc4;letter-spacing:0.06em;">
+          ${round.courseName || 'Round Results'}
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">Par ${totalPar}</div>
+      </div>
+
+      ${lb.map((p,i) => `
+        <div class="lb-row ${i===0?'first':''}">
+          <div class="lb-medal">${medals[i]||i+1}</div>
+          <div class="lb-player">
+            <div class="lb-name">${p.name}${p.name===state.playerName?' <span style="font-size:11px;color:var(--green-accent);">(you)</span>':''}</div>
+            <div class="lb-detail">HCP ${p.handicap} · ${p.played} holes</div>
+          </div>
+          <div class="lb-score">
+            <div class="lb-net" style="color:${p.net<0?'var(--eagle)':p.net===0?'var(--cream)':'var(--bogey)'}">
+              ${p.net>=0?'+'+p.net:p.net}
+            </div>
+            <div class="lb-gross">${p.gross} gross</div>
+          </div>
+        </div>
+      `).join('')}
+
+      <div class="card mt-20">
+        <div class="section-label">Full Scorecard</div>
+        <div style="overflow-x:auto;">
+          <table class="sc-table">
+            <thead>
+              <tr>
+                <th style="text-align:left;">Player</th>
+                ${holes.slice(0,9).map(h=>`<th>${h.hole}</th>`).join('')}
+                <th class="out-col">OUT</th>
+                ${holes.slice(9).map(h=>`<th>${h.hole}</th>`).join('')}
+                <th class="in-col">IN</th>
+                <th class="tot-col">TOT</th>
+              </tr>
+              <tr>
+                <th style="text-align:left;color:var(--muted);">Par</th>
+                ${holes.slice(0,9).map(h=>`<td>${h.par}</td>`).join('')}
+                <td class="out-col">${holes.slice(0,9).reduce((a,h)=>a+h.par,0)}</td>
+                ${holes.slice(9).map(h=>`<td>${h.par}</td>`).join('')}
+                <td class="in-col">${holes.slice(9).reduce((a,h)=>a+h.par,0)}</td>
+                <td class="tot-col">${totalPar}</td>
+              </tr>
+            </thead>
+            <tbody>
+              ${lb.map(p => {
+                const ps = scores[p.id]||{};
+                return `
+                  <tr>
+                    <td style="text-align:left;white-space:nowrap;">${p.name}</td>
+                    ${holes.slice(0,9).map(h => {
+                      const s = ps[h.hole];
+                      const diff = s!=null ? s-h.par : null;
+                      const col = diff!=null ? scoreLabel(diff).color : 'var(--muted)';
+                      return `<td style="color:${col}">${s??'—'}</td>`;
+                    }).join('')}
+                    <td class="out-col">${p.frontGross||'—'}</td>
+                    ${holes.slice(9).map(h => {
+                      const s = ps[h.hole];
+                      const diff = s!=null ? s-h.par : null;
+                      const col = diff!=null ? scoreLabel(diff).color : 'var(--muted)';
+                      return `<td style="color:${col}">${s??'—'}</td>`;
+                    }).join('')}
+                    <td class="in-col">${p.backGross||'—'}</td>
+                    <td class="tot-col">${p.gross||'—'}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <button class="btn btn-secondary mt-14" id="new-round-btn">Start New Round</button>
+    </div>
+  `;
+
+  const navScoring = document.getElementById('nav-scoring');
+  if (navScoring) navScoring.onclick = () => { state.view='scoring'; render(); };
+  document.getElementById('new-round-btn').onclick = () => {
+    if (unsubscribe) unsubscribe();
+    state = { view:'join', roomCode:null, playerName:null, round:null, currentHole:1, editingHoles:false };
+    const url = new URL(window.location);
+    url.searchParams.delete('room');
+    window.history.replaceState({}, '', url);
+    render();
+  };
+}
+
+// ── Boot ──
+const firebaseReady = tryInitFirebase();
+if (!firebaseReady && FIREBASE_CONFIG.apiKey === '') {
+  // Show config instructions
+}
+render();
+</script>
+</body>
+</html>
