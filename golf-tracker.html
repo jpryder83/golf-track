@@ -736,6 +736,7 @@ async function createRound(playerName, courseName, holes, courseKey, date) {
     courseKey: courseKey || null,
     date: date || todayDate(),
     createdAt: Date.now(),
+    createdBy: playerName,
     status: 'setup',
     holes: holes || DEFAULT_HOLES,
     players: {
@@ -895,7 +896,7 @@ async function createGroupRound(courseName, holes, courseKey, date, selectedMemb
   });
   const roundData = {
     courseName, courseKey: courseKey || null, date, groupCode: state.groupCode,
-    createdAt: Date.now(), status: 'setup', holes, players: playersObj, scores: {}
+    createdAt: Date.now(), createdBy: state.groupPlayerName, status: 'setup', holes, players: playersObj, scores: {}
   };
   try {
     await set(ref(db, roomPath(code)), roundData);
@@ -926,7 +927,7 @@ function renderSetup(root) {
   const round = state.round;
   const players = Object.values(round.players || {});
   const holes = round.holes || DEFAULT_HOLES;
-  const isOwner = players[0]?.name === state.playerName || players.length === 0;
+  const isOwner = round.createdBy === state.playerName || players[0]?.name === state.playerName || players.length === 0;
   const totalPar = holes.reduce((a,h)=>a+h.par,0);
   const myPlayer = players.find(p=>p.name===state.playerName);
   const courseTees = (round.courseKey && COURSES[round.courseKey]?.tees) || [];
