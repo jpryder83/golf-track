@@ -1523,7 +1523,10 @@ function renderGroupHome(root) {
               ${m.name === state.groupPlayerName ? '<span style="font-size:11px;color:var(--green-accent);margin-left:4px;">(you)</span>' : ''}
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
-              <span class="player-hcp">HCP ${m.handicap ?? 0}</span>
+              <span class="player-hcp">HCP</span>
+              <input type="number" class="hcp-inline" id="ghcp-${m.id}"
+                value="${m.handicap ?? 0}" min="0" max="54" step="0.1"
+                style="width:52px;padding:4px 6px;font-size:13px;">
             </div>
           </div>
         `).join('')}
@@ -1570,6 +1573,15 @@ function renderGroupHome(root) {
   document.getElementById('copy-group-btn').onclick = () => {
     navigator.clipboard.writeText(joinUrl.toString()).then(()=>toast('Group link copied!')).catch(()=>toast('Copy failed','error'));
   };
+
+  members.forEach(m => {
+    const inp = document.getElementById(`ghcp-${m.id}`);
+    if (inp) inp.onchange = async (e) => {
+      const n = parseFloat(e.target.value);
+      if (isNaN(n) || n < 0 || n > 54) return;
+      await update(ref(db, `${groupPath(state.groupCode)}/members/${m.id}`), { handicap: n });
+    };
+  });
 
   document.getElementById('add-member-btn').onclick = async () => {
     const nameEl = document.getElementById('add-member-name');
