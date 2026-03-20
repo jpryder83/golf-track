@@ -817,6 +817,20 @@ function subscribeToRound(code) {
   unsubscribe = () => off(r);
 }
 
+async function deleteRound(roundCode, groupCode) {
+  if (!confirm('Delete this round? All scores will be lost and cannot be recovered.')) return;
+  try {
+    if (groupCode) await set(ref(db, `${groupPath(groupCode)}/rounds/${roundCode}`), null);
+    await set(ref(db, roomPath(roundCode)), null);
+    forgetSession(roundCode);
+    if (state.roomCode === roundCode) goBackFromRound();
+    else toast('Round deleted');
+  } catch(e) {
+    toast('Failed to delete — check Firebase rules allow deletion.', 'error');
+    console.error(e);
+  }
+}
+
 function goBackFromRound() {
   if (unsubscribe) unsubscribe();
   const url = new URL(window.location);
@@ -1042,6 +1056,10 @@ function renderSetup(root) {
         </div>
       `}
       <button class="btn btn-secondary mt-8" id="back-btn">← ${state.groupCode ? 'Back to Group' : 'Back to Home'}</button>
+      <button class="btn mt-8" id="delete-round-btn"
+        style="background:none;border:1px solid rgba(255,100,100,0.25);color:rgba(255,100,100,0.5);font-size:13px;">
+        Delete Round
+      </button>
     </div>
   `;
 
@@ -1084,6 +1102,7 @@ function renderSetup(root) {
   }
 
   document.getElementById('back-btn').onclick = () => goBackFromRound();
+  document.getElementById('delete-round-btn').onclick = () => deleteRound(state.roomCode, state.groupCode);
 
   if (state.editingHoles) bindHoleEditorEvents(holes);
 
@@ -1425,12 +1444,17 @@ function renderLeaderboard(root) {
       </div>
 
       <button class="btn btn-secondary mt-14" id="new-round-btn">Start New Round</button>
+      <button class="btn mt-8" id="delete-round-btn"
+        style="background:none;border:1px solid rgba(255,100,100,0.25);color:rgba(255,100,100,0.5);font-size:13px;">
+        Delete Round
+      </button>
     </div>
   `;
 
   const navScoring = document.getElementById('nav-scoring');
   if (navScoring) navScoring.onclick = () => { state.view='scoring'; render(); };
   document.getElementById('nav-back').onclick = () => goBackFromRound();
+  document.getElementById('delete-round-btn').onclick = () => deleteRound(state.roomCode, state.groupCode);
   document.getElementById('new-round-btn').onclick = () => {
     if (unsubscribe) unsubscribe();
     const url = new URL(window.location);
@@ -1516,6 +1540,9 @@ function renderGroupHome(root) {
           <span class="status-pip ${r.status||'setup'}">
             ${r.status==='complete'?'Complete':r.status==='scoring'?'Live':'Pending'}
           </span>
+          <button class="del-round-btn" data-code="${r.code}"
+            style="background:none;border:none;color:rgba(255,100,100,0.4);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0;line-height:1;"
+            title="Delete round">🗑</button>
         </div>
       `).join('')}
 
@@ -1554,7 +1581,13 @@ function renderGroupHome(root) {
   };
   groupRounds.forEach(r => {
     const el = document.getElementById(`rr-${r.code}`);
-    if (el) el.onclick = () => joinRound(r.code, state.groupPlayerName);
+    if (el) el.onclick = (e) => {
+      if (e.target.closest('.del-round-btn')) return; // handled separately
+      joinRound(r.code, state.groupPlayerName);
+    };
+  });
+  root.querySelectorAll('.del-round-btn').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); deleteRound(btn.dataset.code, state.groupCode); };
   });
 }
 
