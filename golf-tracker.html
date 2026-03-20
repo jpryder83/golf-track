@@ -1363,18 +1363,20 @@ function renderLeaderboard(root) {
   const totalPar = holes.reduce((a,h)=>a+h.par,0);
 
   const lb = players.map(p => {
-    let gross=0, net=0, played=0, frontGross=0, backGross=0;
+    let gross=0, net=0, played=0, frontGross=0, backGross=0, stableford=0, frontSF=0, backSF=0;
     holes.forEach((h,i) => {
       const s = (scores[p.id]||{})[h.hole];
       if (s != null) {
         played++;
         gross+=s;
         net+=(s - h.par - calcExtraStroke(p.handicap, h.si));
-        if(i<9) frontGross+=s; else backGross+=s;
+        const pts = Math.max(0, 2 - (s - h.par - calcExtraStroke(p.handicap, h.si)));
+        stableford+=pts;
+        if(i<9) { frontGross+=s; frontSF+=pts; } else { backGross+=s; backSF+=pts; }
       }
     });
-    return { ...p, gross, net, played, frontGross, backGross };
-  }).sort((a,b)=>a.net-b.net);
+    return { ...p, gross, net, played, frontGross, backGross, stableford, frontSF, backSF };
+  }).sort((a,b)=>b.stableford-a.stableford);
 
   const medals = ['🥇','🥈','🥉'];
 
@@ -1401,10 +1403,10 @@ function renderLeaderboard(root) {
             <div class="lb-detail">HCP ${p.handicap} · ${p.played} holes</div>
           </div>
           <div class="lb-score">
-            <div class="lb-net" style="color:${p.net<0?'var(--eagle)':p.net===0?'var(--cream)':'var(--bogey)'}">
-              ${p.net>=0?'+'+p.net:p.net}
+            <div class="lb-net" style="color:var(--green-accent);">
+              ${p.stableford} pts
             </div>
-            <div class="lb-gross">${p.gross} gross</div>
+            <div class="lb-gross">${p.gross} gross · ${p.net>=0?'+'+p.net:p.net} net</div>
           </div>
         </div>
       `).join('')}
@@ -1452,6 +1454,22 @@ function renderLeaderboard(root) {
                     }).join('')}
                     <td class="in-col">${p.backGross||'—'}</td>
                     <td class="tot-col">${p.gross||'—'}</td>
+                  </tr>
+                  <tr style="font-size:11px;opacity:0.65;">
+                    <td style="text-align:left;white-space:nowrap;color:var(--green-accent);">Stableford</td>
+                    ${holes.slice(0,9).map(h => {
+                      const s = ps[h.hole];
+                      const pts = s!=null ? Math.max(0, 2-(s-h.par-calcExtraStroke(p.handicap,h.si))) : null;
+                      return `<td style="color:var(--green-accent)">${pts??'—'}</td>`;
+                    }).join('')}
+                    <td class="out-col" style="color:var(--green-accent)">${p.frontSF||'—'}</td>
+                    ${holes.slice(9).map(h => {
+                      const s = ps[h.hole];
+                      const pts = s!=null ? Math.max(0, 2-(s-h.par-calcExtraStroke(p.handicap,h.si))) : null;
+                      return `<td style="color:var(--green-accent)">${pts??'—'}</td>`;
+                    }).join('')}
+                    <td class="in-col" style="color:var(--green-accent)">${p.backSF||'—'}</td>
+                    <td class="tot-col" style="color:var(--green-accent);font-weight:600;">${p.stableford||'—'}</td>
                   </tr>
                 `;
               }).join('')}
