@@ -927,7 +927,7 @@ function renderSetup(root) {
   const round = state.round;
   const players = Object.values(round.players || {});
   const holes = round.holes || DEFAULT_HOLES;
-  const isOwner = round.createdBy === state.playerName || players[0]?.name === state.playerName || players.length === 0;
+  const isOwner = players.length === 0 || players.some(p => p.name === state.playerName);
   const totalPar = holes.reduce((a,h)=>a+h.par,0);
   const myPlayer = players.find(p=>p.name===state.playerName);
   const courseTees = (round.courseKey && COURSES[round.courseKey]?.tees) || [];
