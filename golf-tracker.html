@@ -1013,8 +1013,8 @@ function bindScoreEntries(players, hole, scores) {
     };
 
     inp.oninput = (e) => setScore(e.target.value);
-    if (dec) dec.onclick = () => { const cur = parseInt(inp.value)||hole.par; if(cur>1) setScore(cur-1); };
-    if (inc) inc.onclick = () => { const cur = parseInt(inp.value)||hole.par; setScore(cur+1); };
+    if (dec) dec.onclick = () => { const cur = parseInt(inp.value); setScore(isNaN(cur) ? hole.par - 1 : cur - 1); };
+    if (inc) inc.onclick = () => { const cur = parseInt(inp.value); setScore(isNaN(cur) ? hole.par : cur + 1); };
   });
 }
 
