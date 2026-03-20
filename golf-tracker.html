@@ -293,30 +293,37 @@ const DEFAULT_HOLES = Array.from({length:18},(_,i)=>({
   si: i+1
 }));
 
+const TEE_INFO = {
+  white:  { label: 'White',  color: '#d1d5db' },
+  yellow: { label: 'Yellow', color: '#fbbf24' },
+  red:    { label: 'Red',    color: '#ef4444'  },
+};
+
 const COURSES = {
   'malkins-bank': {
     name: 'Malkins Bank',
     location: 'Sandbach',
     par: 70,
+    tees: ['white','yellow','red'],
     holes: [
-      { hole:1,  par:3, si:15, yards:171 },
-      { hole:2,  par:4, si:17, yards:359 },
-      { hole:3,  par:4, si:5,  yards:388 },
-      { hole:4,  par:4, si:1,  yards:355 },
-      { hole:5,  par:3, si:13, yards:144 },
-      { hole:6,  par:4, si:7,  yards:368 },
-      { hole:7,  par:4, si:3,  yards:364 },
-      { hole:8,  par:4, si:9,  yards:369 },
-      { hole:9,  par:4, si:11, yards:377 },
-      { hole:10, par:4, si:12, yards:359 },
-      { hole:11, par:5, si:6,  yards:516 },
-      { hole:12, par:3, si:10, yards:164 },
-      { hole:13, par:4, si:4,  yards:329 },
-      { hole:14, par:3, si:14, yards:197 },
-      { hole:15, par:4, si:18, yards:338 },
-      { hole:16, par:5, si:2,  yards:498 },
-      { hole:17, par:4, si:16, yards:343 },
-      { hole:18, par:4, si:8,  yards:366 },
+      { hole:1,  par:3, si:15, yards:{white:171,yellow:152,red:145} },
+      { hole:2,  par:4, si:17, yards:{white:359,yellow:340,red:330} },
+      { hole:3,  par:4, si:5,  yards:{white:388,yellow:371,red:365} },
+      { hole:4,  par:4, si:1,  yards:{white:355,yellow:336,red:328} },
+      { hole:5,  par:3, si:13, yards:{white:144,yellow:124,red:102} },
+      { hole:6,  par:4, si:7,  yards:{white:368,yellow:358,red:357} },
+      { hole:7,  par:4, si:3,  yards:{white:364,yellow:346,red:338} },
+      { hole:8,  par:4, si:9,  yards:{white:369,yellow:349,red:335} },
+      { hole:9,  par:4, si:11, yards:{white:377,yellow:358,red:349} },
+      { hole:10, par:4, si:12, yards:{white:359,yellow:337,red:331} },
+      { hole:11, par:5, si:6,  yards:{white:516,yellow:399,red:449} },
+      { hole:12, par:3, si:10, yards:{white:164,yellow:138,red:132} },
+      { hole:13, par:4, si:4,  yards:{white:329,yellow:308,red:301} },
+      { hole:14, par:3, si:14, yards:{white:197,yellow:173,red:160} },
+      { hole:15, par:4, si:18, yards:{white:338,yellow:317,red:293} },
+      { hole:16, par:5, si:2,  yards:{white:498,yellow:455,red:437} },
+      { hole:17, par:4, si:16, yards:{white:343,yellow:323,red:315} },
+      { hole:18, par:4, si:8,  yards:{white:366,yellow:348,red:345} },
     ]
   }
 };
@@ -335,14 +342,17 @@ let state = {
 };
 
 // ── Session persistence (localStorage) ──
-function saveSession(roomCode, playerName) {
-  localStorage.setItem('golf_session', JSON.stringify({ roomCode, playerName, savedAt: Date.now() }));
+function saveSession(roomCode, playerName, courseName) {
+  const sessions = loadSessions().filter(s => s.roomCode !== roomCode);
+  sessions.unshift({ roomCode, playerName, courseName: courseName || '', savedAt: Date.now() });
+  localStorage.setItem('golf_sessions', JSON.stringify(sessions.slice(0, 5)));
 }
-function loadSession() {
-  try { return JSON.parse(localStorage.getItem('golf_session')); } catch { return null; }
+function loadSessions() {
+  try { return JSON.parse(localStorage.getItem('golf_sessions')) || []; } catch { return []; }
 }
-function clearSession() {
-  localStorage.removeItem('golf_session');
+function forgetSession(roomCode) {
+  const sessions = loadSessions().filter(s => s.roomCode !== roomCode);
+  localStorage.setItem('golf_sessions', JSON.stringify(sessions));
 }
 
 // ── Firebase init ──
@@ -457,20 +467,36 @@ function renderConfigScreen(root) {
 
 // ── Join screen ──
 function renderJoin(root) {
-  const session = loadSession();
+  const sessions = loadSessions();
   root.innerHTML = `
     <div class="join-screen fade-in">
       <div class="join-title">⛳ Scorecard</div>
       <div class="join-sub">Real-time golf scoring for your group</div>
 
-      ${session ? `
+      ${sessions.length > 0 ? `
         <div class="card" style="text-align:left;border-color:rgba(212,168,67,0.3);background:rgba(212,168,67,0.06);margin-bottom:16px;">
-          <div class="section-label">Resume Last Round</div>
-          <div style="font-size:13px;margin-bottom:12px;">
-            Room <strong style="color:var(--gold);letter-spacing:0.1em;">${session.roomCode}</strong>
-            &nbsp;·&nbsp; Playing as <strong>${session.playerName}</strong>
-          </div>
-          <button class="btn btn-primary" id="resume-btn" style="background:var(--gold);color:#0d2b1a;box-shadow:0 4px 20px rgba(212,168,67,0.2);">Resume Round →</button>
+          <div class="section-label">Recent Rounds</div>
+          ${sessions.map(s => `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                  ${s.courseName || 'Unknown course'}
+                </div>
+                <div style="font-size:11px;color:var(--muted);margin-top:1px;">
+                  Room <strong style="color:var(--gold);letter-spacing:0.08em;">${s.roomCode}</strong>
+                  &nbsp;·&nbsp; ${s.playerName}
+                </div>
+              </div>
+              <button class="btn-sm resume-btn" data-code="${s.roomCode}" data-name="${s.playerName}"
+                style="background:rgba(212,168,67,0.15);border-color:rgba(212,168,67,0.3);color:var(--gold);white-space:nowrap;">
+                Resume →
+              </button>
+              <button class="btn-sm forget-btn" data-code="${s.roomCode}"
+                style="color:rgba(255,100,100,0.5);border-color:rgba(255,100,100,0.2);">
+                Forget
+              </button>
+            </div>
+          `).join('')}
         </div>
         <div class="or-divider">or start fresh</div>
       ` : ''}
@@ -499,10 +525,13 @@ function renderJoin(root) {
     </div>
   `;
 
-  // Resume button
-  if (session) {
-    document.getElementById('resume-btn').onclick = () => joinRound(session.roomCode, session.playerName);
-  }
+  // Resume / Forget buttons
+  root.querySelectorAll('.resume-btn').forEach(btn => {
+    btn.onclick = () => joinRound(btn.dataset.code, btn.dataset.name);
+  });
+  root.querySelectorAll('.forget-btn').forEach(btn => {
+    btn.onclick = () => { forgetSession(btn.dataset.code); render(); };
+  });
 
   // Prefill from URL param
   const params = new URLSearchParams(window.location.search);
@@ -513,8 +542,7 @@ function renderJoin(root) {
   }
 
   document.getElementById('course-select').onchange = (e) => {
-    const customInput = document.getElementById('new-course');
-    customInput.style.display = e.target.value === 'other' ? 'block' : 'none';
+    document.getElementById('new-course').style.display = e.target.value === 'other' ? 'block' : 'none';
   };
 
   document.getElementById('create-btn').onclick = async () => {
@@ -526,12 +554,13 @@ function renderJoin(root) {
     if (courseKey === 'other') {
       courseName = document.getElementById('new-course').value.trim() || 'Custom Course';
       holes = DEFAULT_HOLES;
+      await createRound(playerName, courseName, holes, null);
     } else {
       const c = COURSES[courseKey];
       courseName = `${c.name}, ${c.location}`;
       holes = c.holes;
+      await createRound(playerName, courseName, holes, courseKey);
     }
-    await createRound(playerName, courseName, holes);
   };
   document.getElementById('join-btn').onclick = async () => {
     const code = document.getElementById('join-code').value.trim().toUpperCase();
@@ -546,16 +575,17 @@ function renderJoin(root) {
 }
 
 // ── Create round ──
-async function createRound(playerName, courseName, holes) {
+async function createRound(playerName, courseName, holes, courseKey) {
   const code = genCode();
   const playerId = 'p_' + Date.now();
   const roundData = {
     courseName: courseName || '',
+    courseKey: courseKey || null,
     createdAt: Date.now(),
     status: 'setup',
     holes: holes || DEFAULT_HOLES,
     players: {
-      [playerId]: { name: playerName, handicap: 0, id: playerId, joinedAt: Date.now() }
+      [playerId]: { name: playerName, handicap: 0, tee: 'yellow', id: playerId, joinedAt: Date.now() }
     },
     scores: {},
   };
@@ -567,7 +597,7 @@ async function createRound(playerName, courseName, holes) {
     state.view = 'setup';
     subscribeToRound(code);
     updateURL(code);
-    saveSession(code, playerName);
+    saveSession(code, playerName, courseName);
     toast(`Round created! Share code: ${code}`);
     render();
   } catch(e) {
@@ -595,7 +625,7 @@ async function joinRound(code, playerName) {
     } else {
       playerId = 'p_' + Date.now();
       await update(ref(db, `${roomPath(code)}/players`), {
-        [playerId]: { name: playerName, handicap: 0, id: playerId, joinedAt: Date.now() }
+        [playerId]: { name: playerName, handicap: 0, tee: 'yellow', id: playerId, joinedAt: Date.now() }
       });
       toast(`Joined round!`);
     }
@@ -606,7 +636,7 @@ async function joinRound(code, playerName) {
     state.view = data.status === 'scoring' ? 'scoring' : data.status === 'complete' ? 'leaderboard' : 'setup';
     subscribeToRound(code);
     updateURL(code);
-    saveSession(code, playerName);
+    saveSession(code, playerName, data.courseName);
     render();
   } catch(e) {
     toast('Failed to join. Check your connection.', 'error');
@@ -642,6 +672,7 @@ function renderSetup(root) {
   const isOwner = players[0]?.name === state.playerName || players.length === 0;
   const totalPar = holes.reduce((a,h)=>a+h.par,0);
   const myPlayer = players.find(p=>p.name===state.playerName);
+  const courseTees = (round.courseKey && COURSES[round.courseKey]?.tees) || [];
 
   root.innerHTML = `
     <div class="fade-in">
@@ -677,25 +708,39 @@ function renderSetup(root) {
       <div class="card">
         <div class="section-label">Players</div>
         <div id="players-list">
-          ${players.map(p => `
+          ${players.map(p => {
+            const tee = p.tee || 'yellow';
+            const canEdit = p.name === state.playerName || isOwner;
+            return `
             <div class="player-row">
               <div class="player-name">${p.name} ${p.name===state.playerName?'<span style="font-size:11px;color:var(--green-accent);">(you)</span>':''}</div>
               <div style="display:flex;align-items:center;gap:8px;">
+                ${courseTees.length > 0 ? `
+                  <select id="tee-${p.id}" style="padding:3px 6px;font-size:12px;width:76px;border-color:${TEE_INFO[tee]?.color||'#fbbf24'};"
+                    ${canEdit ? `onchange="window._updateTee('${p.id}', this.value)"` : 'disabled'}>
+                    ${courseTees.map(t => `<option value="${t}" ${tee===t?'selected':''}>${TEE_INFO[t]?.label||t}</option>`).join('')}
+                  </select>
+                ` : ''}
                 <span class="player-hcp">HCP</span>
-                ${p.name===state.playerName ? `
+                ${canEdit ? `
                   <input type="number" id="hcp-${p.id}" value="${p.handicap}" min="0" max="54" step="0.1"
                     style="width:60px;padding:4px 6px;font-size:13px;" oninput="window._updateHcp('${p.id}', this.value)">
                 ` : `<span class="player-hcp">${p.handicap}</span>`}
               </div>
-            </div>
-          `).join('')}
+            </div>`;
+          }).join('')}
         </div>
         ${isOwner ? `
           <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
             <div class="section-label" style="margin-bottom:8px;">Add Player (on their behalf)</div>
-            <div style="display:flex;gap:8px;">
-              <input type="text" id="add-player-name" placeholder="Player name" style="flex:1;">
-              <input type="number" id="add-player-hcp" placeholder="HCP" min="0" max="54" step="0.1" style="width:72px;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <input type="text" id="add-player-name" placeholder="Player name" style="flex:1;min-width:100px;">
+              ${courseTees.length > 0 ? `
+                <select id="add-player-tee" style="width:80px;padding:4px 6px;font-size:12px;">
+                  ${courseTees.map(t => `<option value="${t}">${TEE_INFO[t]?.label||t}</option>`).join('')}
+                </select>
+              ` : ''}
+              <input type="number" id="add-player-hcp" placeholder="HCP" min="0" max="54" step="0.1" style="width:66px;">
               <button class="btn-sm" id="add-player-btn" style="padding:5px 14px;">+ Add</button>
             </div>
           </div>
@@ -736,15 +781,17 @@ function renderSetup(root) {
     document.getElementById('add-player-btn').onclick = async () => {
       const nameEl = document.getElementById('add-player-name');
       const hcpEl = document.getElementById('add-player-hcp');
+      const teeEl = document.getElementById('add-player-tee');
       const name = nameEl.value.trim();
       const hcp = parseFloat(hcpEl.value) || 0;
+      const tee = teeEl?.value || 'yellow';
       if (!name) { toast('Enter a player name', 'error'); return; }
       if (players.find(p => p.name.toLowerCase() === name.toLowerCase())) {
         toast('Player already in round', 'error'); return;
       }
       const playerId = 'p_' + Date.now();
       await update(ref(db, `${roomPath(state.roomCode)}/players`), {
-        [playerId]: { name, handicap: hcp, id: playerId, joinedAt: Date.now() }
+        [playerId]: { name, handicap: hcp, tee, id: playerId, joinedAt: Date.now() }
       });
       nameEl.value = '';
       hcpEl.value = '';
@@ -758,6 +805,9 @@ function renderSetup(root) {
     const n = parseFloat(val);
     if (isNaN(n) || n < 0 || n > 54) return;
     await update(ref(db, `${roomPath(state.roomCode)}/players/${playerId}`), { handicap: n });
+  };
+  window._updateTee = async (playerId, tee) => {
+    await update(ref(db, `${roomPath(state.roomCode)}/players/${playerId}`), { tee });
   };
 }
 
@@ -845,7 +895,7 @@ function renderScoring(root) {
         <button class="hole-arrow" id="prev-hole" ${state.currentHole===1?'disabled':''}>←</button>
         <div class="hole-title">
           <div class="hole-num">Hole ${state.currentHole}</div>
-          <div class="hole-meta">Par ${hole.par} &nbsp;·&nbsp; SI ${hole.si}${hole.yards ? ` &nbsp;·&nbsp; ${hole.yards}y` : ''}</div>
+          <div class="hole-meta">Par ${hole.par} &nbsp;·&nbsp; SI ${hole.si}</div>
         </div>
         <button class="hole-arrow" id="next-hole" ${state.currentHole===18?'disabled':''}>→</button>
       </div>
@@ -916,13 +966,22 @@ function renderScoreEntry(player, hole, scores) {
   const extraStroke = calcExtraStroke(player.handicap, hole.si);
   const diff = s != null ? (s - hole.par - extraStroke) : null;
   const lbl = diff != null ? scoreLabel(diff) : null;
+  const tee = player.tee || 'yellow';
+  const teeData = TEE_INFO[tee];
+  const rawYards = hole.yards;
+  const yards = rawYards && typeof rawYards === 'object' ? rawYards[tee] : rawYards;
   return `
     <div class="score-card ${s!=null?'has-score':''}" id="sc-${player.id}">
       <div class="score-info">
         <div class="score-player-name">${player.name}${extraStroke?` <span style="color:var(--gold);font-size:11px;">●</span>`:''}
           ${player.name===state.playerName?'<span style="font-size:10px;color:var(--green-accent);margin-left:4px;">(you)</span>':''}
         </div>
-        <div class="score-hcp-note">HCP ${player.handicap}${extraStroke?' · extra stroke':''}</div>
+        <div class="score-hcp-note">
+          HCP ${player.handicap}
+          ${teeData ? ` &nbsp;·&nbsp; <span style="color:${teeData.color};">■</span> ${teeData.label}` : ''}
+          ${yards ? ` · ${yards}y` : ''}
+          ${extraStroke ? ' · extra stroke' : ''}
+        </div>
       </div>
       <div class="score-controls">
         ${lbl ? `<span class="score-badge" style="color:${lbl.color};background:${lbl.color}22;">${lbl.label}</span>` : ''}
@@ -1068,7 +1127,6 @@ function renderLeaderboard(root) {
   if (navScoring) navScoring.onclick = () => { state.view='scoring'; render(); };
   document.getElementById('new-round-btn').onclick = () => {
     if (unsubscribe) unsubscribe();
-    clearSession();
     state = { view:'join', roomCode:null, playerName:null, round:null, currentHole:1, editingHoles:false };
     const url = new URL(window.location);
     url.searchParams.delete('room');
