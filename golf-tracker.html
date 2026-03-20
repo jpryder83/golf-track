@@ -1504,8 +1504,11 @@ function renderGroupHome(root) {
     <div class="fade-in">
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <div>
-            <div style="font-family:'Playfair Display',serif;font-size:20px;color:#b8ddc4;">${group.name}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div id="group-name-display" style="font-family:'Playfair Display',serif;font-size:20px;color:#b8ddc4;">${group.name}</div>
+              <button class="btn-sm" id="edit-group-name-btn" style="flex-shrink:0;">✎</button>
+            </div>
             <div style="font-size:11px;color:var(--muted);margin-top:3px;">
               Code: <strong style="color:var(--green-accent);letter-spacing:0.1em;">${state.groupCode}</strong>
             </div>
@@ -1517,16 +1520,22 @@ function renderGroupHome(root) {
       <div class="card" style="margin-bottom:16px;">
         <div class="section-label">Members</div>
         ${members.map(m => `
-          <div class="player-row">
-            <div class="player-name">
-              ${m.name}
-              ${m.name === state.groupPlayerName ? '<span style="font-size:11px;color:var(--green-accent);margin-left:4px;">(you)</span>' : ''}
+          <div class="player-row" id="mrow-${m.id}">
+            <div class="player-name" style="flex:1;min-width:0;">
+              <div id="mname-${m.id}" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <span>${m.name}${m.name === state.groupPlayerName ? ' <span style="font-size:11px;color:var(--green-accent);">(you)</span>' : ''}</span>
+                <button class="btn-sm edit-name-btn" data-id="${m.id}" data-name="${m.name}"
+                  style="padding:2px 7px;font-size:10px;">✎</button>
+              </div>
+              <div id="confirm-remove-${m.id}"></div>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;">
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
               <span class="player-hcp">HCP</span>
               <input type="number" class="hcp-inline" id="ghcp-${m.id}"
                 value="${m.handicap ?? 0}" min="0" max="54" step="0.1"
                 style="width:52px;padding:4px 6px;font-size:13px;">
+              <button class="remove-btn remove-member-btn" data-id="${m.id}" data-name="${m.name}"
+                title="Remove member">✕</button>
             </div>
           </div>
         `).join('')}
@@ -1580,6 +1589,97 @@ function renderGroupHome(root) {
       const n = parseFloat(e.target.value);
       if (isNaN(n) || n < 0 || n > 54) return;
       await update(ref(db, `${groupPath(state.groupCode)}/members/${m.id}`), { handicap: n });
+    };
+  });
+
+  // Edit group name
+  document.getElementById('edit-group-name-btn').onclick = () => {
+    const display = document.getElementById('group-name-display');
+    const editBtn = document.getElementById('edit-group-name-btn');
+    const currentName = group.name;
+    display.innerHTML = `
+      <input type="text" id="group-name-input" value="${currentName}"
+        style="font-size:16px;padding:3px 8px;max-width:160px;">
+      <button class="btn-sm" id="save-group-name-btn" style="padding:3px 10px;">Save</button>
+      <button class="btn-sm" id="cancel-group-name-btn" style="padding:3px 10px;opacity:0.6;">✕</button>
+    `;
+    editBtn.style.display = 'none';
+    document.getElementById('save-group-name-btn').onclick = async () => {
+      const val = document.getElementById('group-name-input').value.trim();
+      if (!val) { toast('Name cannot be empty', 'error'); return; }
+      await update(ref(db, groupPath(state.groupCode)), { name: val });
+      saveGroupSession(state.groupCode, state.groupPlayerName, val);
+    };
+    document.getElementById('cancel-group-name-btn').onclick = () => {
+      display.textContent = currentName;
+      editBtn.style.display = '';
+    };
+  };
+
+  // Edit member names
+  root.querySelectorAll('.edit-name-btn').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.dataset.id;
+      const currentName = btn.dataset.name;
+      const nameDiv = document.getElementById(`mname-${id}`);
+      nameDiv.innerHTML = `
+        <input type="text" id="mname-input-${id}" value="${currentName}"
+          style="font-size:13px;padding:3px 8px;max-width:130px;">
+        <button class="btn-sm" id="save-mname-${id}" style="padding:3px 10px;">Save</button>
+        <button class="btn-sm" id="cancel-mname-${id}" style="padding:3px 10px;opacity:0.6;">✕</button>
+      `;
+      document.getElementById(`save-mname-${id}`).onclick = async () => {
+        const val = document.getElementById(`mname-input-${id}`).value.trim();
+        if (!val) { toast('Name cannot be empty', 'error'); return; }
+        await update(ref(db, `${groupPath(state.groupCode)}/members/${id}`), { name: val });
+        if (currentName === state.groupPlayerName) {
+          state.groupPlayerName = val;
+          saveGroupSession(state.groupCode, val, state.group.name);
+        }
+      };
+      document.getElementById(`cancel-mname-${id}`).onclick = () => {
+        nameDiv.innerHTML = `
+          <span>${currentName}${currentName === state.groupPlayerName ? ' <span style="font-size:11px;color:var(--green-accent);">(you)</span>' : ''}</span>
+          <button class="btn-sm edit-name-btn" data-id="${id}" data-name="${currentName}"
+            style="padding:2px 7px;font-size:10px;">✎</button>
+        `;
+        // Re-bind the edit button
+        nameDiv.querySelector('.edit-name-btn').onclick = btn.onclick;
+      };
+    };
+  });
+
+  // Remove members (two-step confirmation)
+  root.querySelectorAll('.remove-member-btn').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.dataset.id;
+      const name = btn.dataset.name;
+      const confirmDiv = document.getElementById(`confirm-remove-${id}`);
+      if (confirmDiv.innerHTML) {
+        // Already showing confirmation — dismiss it
+        confirmDiv.innerHTML = '';
+        btn.style.opacity = '';
+        return;
+      }
+      btn.style.opacity = '0.3';
+      confirmDiv.innerHTML = `
+        <div style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <span style="font-size:11px;color:var(--muted);">Remove ${name}?</span>
+          <button class="btn-sm" id="confirm-rm-${id}"
+            style="padding:2px 10px;font-size:11px;background:rgba(255,80,80,0.15);color:#f87171;border-color:#f87171;">
+            Confirm
+          </button>
+          <button class="btn-sm" id="cancel-rm-${id}" style="padding:2px 10px;font-size:11px;">Cancel</button>
+        </div>
+      `;
+      document.getElementById(`confirm-rm-${id}`).onclick = async () => {
+        await set(ref(db, `${groupPath(state.groupCode)}/members/${id}`), null);
+        toast(`${name} removed from group`);
+      };
+      document.getElementById(`cancel-rm-${id}`).onclick = () => {
+        confirmDiv.innerHTML = '';
+        btn.style.opacity = '';
+      };
     };
   });
 
