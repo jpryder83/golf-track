@@ -293,6 +293,34 @@ const DEFAULT_HOLES = Array.from({length:18},(_,i)=>({
   si: i+1
 }));
 
+const COURSES = {
+  'malkins-bank': {
+    name: 'Malkins Bank',
+    location: 'Sandbach',
+    par: 70,
+    holes: [
+      { hole:1,  par:3, si:15, yards:171 },
+      { hole:2,  par:4, si:17, yards:359 },
+      { hole:3,  par:4, si:5,  yards:388 },
+      { hole:4,  par:4, si:1,  yards:355 },
+      { hole:5,  par:3, si:13, yards:144 },
+      { hole:6,  par:4, si:7,  yards:368 },
+      { hole:7,  par:4, si:3,  yards:364 },
+      { hole:8,  par:4, si:9,  yards:369 },
+      { hole:9,  par:4, si:11, yards:377 },
+      { hole:10, par:4, si:12, yards:359 },
+      { hole:11, par:5, si:6,  yards:516 },
+      { hole:12, par:3, si:10, yards:164 },
+      { hole:13, par:4, si:4,  yards:329 },
+      { hole:14, par:3, si:14, yards:197 },
+      { hole:15, par:4, si:18, yards:338 },
+      { hole:16, par:5, si:2,  yards:498 },
+      { hole:17, par:4, si:16, yards:343 },
+      { hole:18, par:4, si:8,  yards:366 },
+    ]
+  }
+};
+
 let db = null;
 let roundRef = null;
 let unsubscribe = null;
@@ -449,7 +477,12 @@ function renderJoin(root) {
 
       <div class="card" style="text-align:left;">
         <div class="section-label">Start a New Round</div>
-        <input type="text" id="new-course" placeholder="Course name (optional)" style="margin-bottom:10px;">
+        <select id="course-select" style="margin-bottom:10px;">
+          <option value="">-- Select a course --</option>
+          ${Object.entries(COURSES).map(([k,c])=>`<option value="${k}">${c.name}, ${c.location}</option>`).join('')}
+          <option value="other">Other / Custom</option>
+        </select>
+        <input type="text" id="new-course" placeholder="Course name" style="margin-bottom:10px;display:none;">
         <input type="text" id="new-player" placeholder="Your name">
         <button class="btn btn-primary mt-14" id="create-btn">Create Round</button>
       </div>
@@ -479,11 +512,26 @@ function renderJoin(root) {
     document.getElementById('join-player').focus();
   }
 
+  document.getElementById('course-select').onchange = (e) => {
+    const customInput = document.getElementById('new-course');
+    customInput.style.display = e.target.value === 'other' ? 'block' : 'none';
+  };
+
   document.getElementById('create-btn').onclick = async () => {
     const playerName = document.getElementById('new-player').value.trim();
-    const courseName = document.getElementById('new-course').value.trim();
+    const courseKey = document.getElementById('course-select').value;
     if (!playerName) { toast('Enter your name', 'error'); return; }
-    await createRound(playerName, courseName);
+    if (!courseKey) { toast('Select a course', 'error'); return; }
+    let courseName, holes;
+    if (courseKey === 'other') {
+      courseName = document.getElementById('new-course').value.trim() || 'Custom Course';
+      holes = DEFAULT_HOLES;
+    } else {
+      const c = COURSES[courseKey];
+      courseName = `${c.name}, ${c.location}`;
+      holes = c.holes;
+    }
+    await createRound(playerName, courseName, holes);
   };
   document.getElementById('join-btn').onclick = async () => {
     const code = document.getElementById('join-code').value.trim().toUpperCase();
@@ -498,14 +546,14 @@ function renderJoin(root) {
 }
 
 // ── Create round ──
-async function createRound(playerName, courseName) {
+async function createRound(playerName, courseName, holes) {
   const code = genCode();
   const playerId = 'p_' + Date.now();
   const roundData = {
     courseName: courseName || '',
     createdAt: Date.now(),
     status: 'setup',
-    holes: DEFAULT_HOLES,
+    holes: holes || DEFAULT_HOLES,
     players: {
       [playerId]: { name: playerName, handicap: 0, id: playerId, joinedAt: Date.now() }
     },
@@ -797,7 +845,7 @@ function renderScoring(root) {
         <button class="hole-arrow" id="prev-hole" ${state.currentHole===1?'disabled':''}>←</button>
         <div class="hole-title">
           <div class="hole-num">Hole ${state.currentHole}</div>
-          <div class="hole-meta">Par ${hole.par} &nbsp;·&nbsp; SI ${hole.si}</div>
+          <div class="hole-meta">Par ${hole.par} &nbsp;·&nbsp; SI ${hole.si}${hole.yards ? ` &nbsp;·&nbsp; ${hole.yards}y` : ''}</div>
         </div>
         <button class="hole-arrow" id="next-hole" ${state.currentHole===18?'disabled':''}>→</button>
       </div>
