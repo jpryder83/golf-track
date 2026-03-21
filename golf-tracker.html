@@ -1400,7 +1400,7 @@ function renderLeaderboard(root) {
           <div class="lb-medal">${medals[i]||i+1}</div>
           <div class="lb-player">
             <div class="lb-name">${p.name}${p.name===state.playerName?' <span style="font-size:11px;color:var(--green-accent);">(you)</span>':''}</div>
-            <div class="lb-detail">HCP ${p.handicap} · ${p.played} holes</div>
+            <div class="lb-detail">HCP <input type="number" class="hcp-inline" id="lb-hcp-${p.id}" value="${p.handicap}" min="0" max="54" step="0.1"> · ${p.played} holes</div>
           </div>
           <div class="lb-score">
             <div class="lb-net" style="color:var(--green-accent);">
@@ -1485,6 +1485,15 @@ function renderLeaderboard(root) {
       </button>
     </div>
   `;
+
+  players.forEach(p => {
+    const inp = document.getElementById(`lb-hcp-${p.id}`);
+    if (inp) inp.onchange = async (e) => {
+      const n = parseFloat(e.target.value);
+      if (isNaN(n) || n < 0 || n > 54) return;
+      await update(ref(db, `${roomPath(state.roomCode)}/players/${p.id}`), { handicap: n });
+    };
+  });
 
   const navScoring = document.getElementById('nav-scoring');
   if (navScoring) navScoring.onclick = () => { state.view='scoring'; render(); };
