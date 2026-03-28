@@ -1203,12 +1203,12 @@ function renderScoring(root) {
 
   // Totals
   const totals = players.map(p => {
-    let gross=0, net=0, played=0;
+    let gross=0, net=0, hcpScore=0, played=0;
     holes.forEach(h => {
       const s = (scores[p.id]||{})[h.hole];
-      if (s != null) { gross+=s; net+=(s - h.par - calcExtraStroke(p.handicap, h.si)); played++; }
+      if (s != null) { gross+=s; net+=(s - h.par - calcExtraStroke(p.handicap, h.si)); hcpScore+=calcHandicapScore(s, h.par, p.handicap, h.si); played++; }
     });
-    return { ...p, gross, net, played };
+    return { ...p, gross, net, hcpScore, played };
   }).sort((a,b)=>a.net-b.net);
 
   root.innerHTML = `
@@ -1243,7 +1243,7 @@ function renderScoring(root) {
           <div class="totals-row">
             <span>${p.name} ${p.name===state.playerName?'<span style="font-size:10px;color:var(--green-accent);">(you)</span>':''}</span>
             <span style="color:var(--muted);">
-              ${p.played > 0 ? `${p.gross} gross · <span style="color:${p.net<0?'#10b981':p.net===0?'var(--cream)':'#f97316'}">${p.net>=0?'+'+p.net:p.net}</span> net` : '—'}
+              ${p.played > 0 ? `${p.gross} gross · <span style="color:${p.net<0?'#10b981':p.net===0?'var(--cream)':'#f97316'}">${p.net>=0?'+'+p.net:p.net}</span> net · <span style="color:var(--gold);">${p.hcpScore} hcp</span>` : '—'}
             </span>
           </div>
         `).join('')}
@@ -1278,7 +1278,12 @@ function renderScoring(root) {
 
 function calcExtraStroke(handicap, si) {
   const h = Math.round(handicap);
-  return h >= si ? 1 : 0;
+  return Math.floor(h / 18) + (h % 18 >= si ? 1 : 0);
+}
+
+function calcHandicapScore(gross, par, handicap, si) {
+  const max = par + 2 + calcExtraStroke(handicap, si);
+  return Math.min(gross, max);
 }
 
 function scoreLabel(diff) {
@@ -1363,19 +1368,20 @@ function renderLeaderboard(root) {
   const totalPar = holes.reduce((a,h)=>a+h.par,0);
 
   const lb = players.map(p => {
-    let gross=0, net=0, played=0, frontGross=0, backGross=0, stableford=0, frontSF=0, backSF=0;
+    let gross=0, net=0, hcpScore=0, played=0, frontGross=0, backGross=0, stableford=0, frontSF=0, backSF=0;
     holes.forEach((h,i) => {
       const s = (scores[p.id]||{})[h.hole];
       if (s != null) {
         played++;
         gross+=s;
         net+=(s - h.par - calcExtraStroke(p.handicap, h.si));
+        hcpScore+=calcHandicapScore(s, h.par, p.handicap, h.si);
         const pts = Math.max(0, 2 - (s - h.par - calcExtraStroke(p.handicap, h.si)));
         stableford+=pts;
         if(i<9) { frontGross+=s; frontSF+=pts; } else { backGross+=s; backSF+=pts; }
       }
     });
-    return { ...p, gross, net, played, frontGross, backGross, stableford, frontSF, backSF };
+    return { ...p, gross, net, hcpScore, played, frontGross, backGross, stableford, frontSF, backSF };
   }).sort((a,b)=>b.stableford-a.stableford);
 
   const medals = ['🥇','🥈','🥉'];
@@ -1406,7 +1412,7 @@ function renderLeaderboard(root) {
             <div class="lb-net" style="color:var(--green-accent);">
               ${p.stableford} pts
             </div>
-            <div class="lb-gross">${p.gross} gross · ${p.net>=0?'+'+p.net:p.net} net</div>
+            <div class="lb-gross">${p.gross} gross · ${p.net>=0?'+'+p.net:p.net} net · <span style="color:var(--gold);">${p.hcpScore} hcp</span></div>
           </div>
         </div>
       `).join('')}
@@ -1470,6 +1476,24 @@ function renderLeaderboard(root) {
                     }).join('')}
                     <td class="in-col" style="color:var(--green-accent)">${p.backSF||'—'}</td>
                     <td class="tot-col" style="color:var(--green-accent);font-weight:600;">${p.stableford||'—'}</td>
+                  </tr>
+                  <tr style="font-size:11px;opacity:0.65;">
+                    <td style="text-align:left;white-space:nowrap;color:var(--gold);">Hcp Score</td>
+                    ${holes.slice(0,9).map(h => {
+                      const s = ps[h.hole];
+                      const hs = s!=null ? calcHandicapScore(s, h.par, p.handicap, h.si) : null;
+                      const capped = s!=null && hs < s;
+                      return `<td style="color:var(--gold)${capped?';font-weight:600;':''}">${hs??'—'}</td>`;
+                    }).join('')}
+                    <td class="out-col" style="color:var(--gold)">${holes.slice(0,9).reduce((a,h)=>{const s=ps[h.hole];return s!=null?a+calcHandicapScore(s,h.par,p.handicap,h.si):a;},0)||'—'}</td>
+                    ${holes.slice(9).map(h => {
+                      const s = ps[h.hole];
+                      const hs = s!=null ? calcHandicapScore(s, h.par, p.handicap, h.si) : null;
+                      const capped = s!=null && hs < s;
+                      return `<td style="color:var(--gold)${capped?';font-weight:600;':''}">${hs??'—'}</td>`;
+                    }).join('')}
+                    <td class="in-col" style="color:var(--gold)">${holes.slice(9).reduce((a,h)=>{const s=ps[h.hole];return s!=null?a+calcHandicapScore(s,h.par,p.handicap,h.si):a;},0)||'—'}</td>
+                    <td class="tot-col" style="color:var(--gold);font-weight:600;">${p.hcpScore||'—'}</td>
                   </tr>
                 `;
               }).join('')}
