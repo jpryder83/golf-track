@@ -351,6 +351,7 @@ const TEE_INFO = {
   white:  { label: 'White',  color: '#d1d5db' },
   yellow: { label: 'Yellow', color: '#fbbf24' },
   red:    { label: 'Red',    color: '#ef4444'  },
+  blue:   { label: 'Blue',   color: '#60a5fa'  },
 };
 
 const COURSES = {
@@ -358,7 +359,9 @@ const COURSES = {
     name: 'Malkins Bank',
     location: 'Sandbach',
     par: 70,
-    tees: ['white','yellow','red'],
+    tees: ['white','yellow','red','blue'],
+    cr:    { white: 69.6, yellow: 68.6, red: 72.3, blue: 71.5 },
+    slope: { white: 136,  yellow: 129,  red: 131,  blue: 138  },
     holes: [
       { hole:1,  par:3, si:15, yards:{white:171,yellow:152,red:145} },
       { hole:2,  par:4, si:17, yards:{white:359,yellow:340,red:330} },
@@ -644,6 +647,10 @@ function renderJoin(root) {
           <option value="other">Other / Custom</option>
         </select>
         <input type="text" id="new-course" placeholder="Course name" style="margin-bottom:10px;display:none;">
+        <div id="new-cr-slope" style="display:none;gap:8px;margin-bottom:10px;">
+          <input type="number" id="new-cr" placeholder="Course Rating (e.g. 69.5)" step="0.1" style="flex:1;">
+          <input type="number" id="new-slope" placeholder="Slope (e.g. 113)" step="1" style="flex:1;">
+        </div>
         <input type="text" id="new-player" placeholder="Your name">
         <button class="btn btn-primary mt-14" id="create-btn">Create Round</button>
       </div>
@@ -701,7 +708,9 @@ function renderJoin(root) {
   }
 
   document.getElementById('course-select').onchange = (e) => {
-    document.getElementById('new-course').style.display = e.target.value === 'other' ? 'block' : 'none';
+    const isOther = e.target.value === 'other';
+    document.getElementById('new-course').style.display = isOther ? 'block' : 'none';
+    document.getElementById('new-cr-slope').style.display = isOther ? 'flex' : 'none';
   };
 
   document.getElementById('create-btn').onclick = async () => {
@@ -710,11 +719,13 @@ function renderJoin(root) {
     const date = document.getElementById('new-date').value || todayDate();
     if (!playerName) { toast('Enter your name', 'error'); return; }
     if (!courseKey) { toast('Select a course', 'error'); return; }
-    let courseName, holes;
+    let courseName, holes, courseRating = null, slopeRating = null;
     if (courseKey === 'other') {
       courseName = document.getElementById('new-course').value.trim() || 'Custom Course';
       holes = DEFAULT_HOLES;
-      await createRound(playerName, courseName, holes, null, date);
+      courseRating = parseFloat(document.getElementById('new-cr').value) || null;
+      slopeRating = parseFloat(document.getElementById('new-slope').value) || null;
+      await createRound(playerName, courseName, holes, null, date, courseRating, slopeRating);
     } else {
       const c = COURSES[courseKey];
       courseName = `${c.name}, ${c.location}`;
@@ -735,12 +746,14 @@ function renderJoin(root) {
 }
 
 // ── Create round ──
-async function createRound(playerName, courseName, holes, courseKey, date) {
+async function createRound(playerName, courseName, holes, courseKey, date, courseRating = null, slopeRating = null) {
   const code = genCode();
   const playerId = 'p_' + Date.now();
   const roundData = {
     courseName: courseName || '',
     courseKey: courseKey || null,
+    courseRating: courseRating,
+    slopeRating: slopeRating,
     date: date || todayDate(),
     createdAt: Date.now(),
     createdBy: playerName,
@@ -919,7 +932,7 @@ async function updateGroupRoundStatus(roundCode, status) {
   await update(ref(db, `${groupPath(state.groupCode)}/rounds/${roundCode}`), { status });
 }
 
-async function createGroupRound(courseName, holes, courseKey, date, selectedMembers) {
+async function createGroupRound(courseName, holes, courseKey, date, selectedMembers, courseRating = null, slopeRating = null) {
   const code = genCode();
   const playersObj = {};
   selectedMembers.forEach(m => {
@@ -927,7 +940,7 @@ async function createGroupRound(courseName, holes, courseKey, date, selectedMemb
     playersObj[pid] = { name: m.name, handicap: m.handicap || 0, tee: m.tee || 'yellow', id: pid, joinedAt: Date.now() };
   });
   const roundData = {
-    courseName, courseKey: courseKey || null, date, groupCode: state.groupCode,
+    courseName, courseKey: courseKey || null, courseRating, slopeRating, date, groupCode: state.groupCode,
     createdAt: Date.now(), createdBy: state.groupPlayerName, status: 'setup', holes, players: playersObj, scores: {}
   };
   try {
@@ -1286,6 +1299,21 @@ function calcHandicapScore(gross, par, handicap, si) {
   return Math.min(gross, max);
 }
 
+function calcDifferential(hcpScore, cr, slope) {
+  if (cr == null || slope == null || !slope) return null;
+  return Math.round((hcpScore - cr) * 113 / slope * 10) / 10;
+}
+
+function getPlayerCRSlope(player, round) {
+  const courseKey = round.courseKey;
+  if (courseKey && COURSES[courseKey]) {
+    const c = COURSES[courseKey];
+    const tee = player.tee || 'yellow';
+    return { cr: c.cr?.[tee] ?? null, slope: c.slope?.[tee] ?? null };
+  }
+  return { cr: round.courseRating ?? null, slope: round.slopeRating ?? null };
+}
+
 function scoreLabel(diff) {
   if (diff <= -3) return { label:'Albatross', color:'var(--gold)' };
   if (diff === -2) return { label:'Eagle', color:'var(--eagle)' };
@@ -1381,7 +1409,9 @@ function renderLeaderboard(root) {
         if(i<9) { frontGross+=s; frontSF+=pts; } else { backGross+=s; backSF+=pts; }
       }
     });
-    return { ...p, gross, net, hcpScore, played, frontGross, backGross, stableford, frontSF, backSF };
+    const { cr, slope } = getPlayerCRSlope(p, round);
+    const differential = played === holes.length ? calcDifferential(hcpScore, cr, slope) : null;
+    return { ...p, gross, net, hcpScore, differential, played, frontGross, backGross, stableford, frontSF, backSF };
   }).sort((a,b)=>b.stableford-a.stableford);
 
   const medals = ['🥇','🥈','🥉'];
@@ -1412,7 +1442,7 @@ function renderLeaderboard(root) {
             <div class="lb-net" style="color:var(--green-accent);">
               ${p.stableford} pts
             </div>
-            <div class="lb-gross">${p.gross} gross · ${p.net>=0?'+'+p.net:p.net} net · <span style="color:var(--gold);">${p.hcpScore} hcp</span></div>
+            <div class="lb-gross">${p.gross} gross · ${p.net>=0?'+'+p.net:p.net} net · <span style="color:var(--gold);">${p.hcpScore} hcp</span>${p.differential!=null?` · <span style="color:var(--muted);">diff ${p.differential>=0?'+':''}${p.differential}</span>`:''}</div>
           </div>
         </div>
       `).join('')}
@@ -1845,6 +1875,10 @@ function renderNewGroupRound(root) {
             <option value="other">Other / Custom</option>
           </select>
           <input type="text" id="new-course" placeholder="Course name" style="margin-top:8px;display:none;">
+          <div id="new-cr-slope" style="display:none;gap:8px;margin-top:8px;">
+            <input type="number" id="new-cr" placeholder="Course Rating (e.g. 69.5)" step="0.1" style="flex:1;">
+            <input type="number" id="new-slope" placeholder="Slope (e.g. 113)" step="1" style="flex:1;">
+          </div>
         </div>
         <div>
           <div style="font-size:10px;color:var(--muted);letter-spacing:0.1em;margin-bottom:8px;">WHO'S PLAYING?</div>
@@ -1862,7 +1896,9 @@ function renderNewGroupRound(root) {
   renderHcpInputs();
 
   document.getElementById('course-select').onchange = (e) => {
-    document.getElementById('new-course').style.display = e.target.value === 'other' ? 'block' : 'none';
+    const isOther = e.target.value === 'other';
+    document.getElementById('new-course').style.display = isOther ? 'block' : 'none';
+    document.getElementById('new-cr-slope').style.display = isOther ? 'flex' : 'none';
     renderHcpInputs();
   };
 
@@ -1873,10 +1909,12 @@ function renderNewGroupRound(root) {
     const date = document.getElementById('round-date').value || todayDate();
     if (!courseKey) { toast('Select a course', 'error'); return; }
     if (selected.size === 0) { toast('Select at least one player', 'error'); return; }
-    let courseName, holes;
+    let courseName, holes, courseRating = null, slopeRating = null;
     if (courseKey === 'other') {
       courseName = document.getElementById('new-course').value.trim() || 'Custom Course';
       holes = DEFAULT_HOLES;
+      courseRating = parseFloat(document.getElementById('new-cr').value) || null;
+      slopeRating = parseFloat(document.getElementById('new-slope').value) || null;
     } else {
       const c = COURSES[courseKey];
       courseName = `${c.name}, ${c.location}`;
@@ -1888,7 +1926,7 @@ function renderNewGroupRound(root) {
       handicap: parseFloat(document.getElementById(`hcp-new-${m.id}`)?.value) ?? m.handicap ?? 0,
       tee: document.getElementById(`tee-new-${m.id}`)?.value || m.tee || 'yellow',
     }));
-    await createGroupRound(courseName, holes, courseKey === 'other' ? null : courseKey, date, selectedMembers);
+    await createGroupRound(courseName, holes, courseKey === 'other' ? null : courseKey, date, selectedMembers, courseRating, slopeRating);
   };
 }
 
