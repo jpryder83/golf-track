@@ -932,6 +932,47 @@ async function updateGroupRoundStatus(roundCode, status) {
   await update(ref(db, `${groupPath(state.groupCode)}/rounds/${roundCode}`), { status });
 }
 
+async function loadSuggestedHandicaps(group, members) {
+  const result = new Map();
+  const allGroupRounds = Object.entries(group.rounds || {})
+    .map(([code, r]) => ({ code, ...r }))
+    .filter(r => r.status === 'complete')
+    .sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.createdAt - a.createdAt)
+    .slice(0, 20);
+  if (allGroupRounds.length === 0) return result;
+
+  const fullRounds = await Promise.all(
+    allGroupRounds.map(r =>
+      get(ref(db, roomPath(r.code)))
+        .then(snap => snap.exists() ? snap.val() : null)
+        .catch(() => null)
+    )
+  );
+
+  for (const member of members) {
+    const memberNameLower = member.name.toLowerCase();
+    const diffs = [];
+    for (const round of fullRounds) {
+      if (!round) continue;
+      const holes = round.holes || [];
+      if (holes.length !== 18) continue;
+      const player = Object.values(round.players || {}).find(p => p.name.toLowerCase() === memberNameLower);
+      if (!player) continue;
+      const playerScores = (round.scores || {})[player.id] || {};
+      if (holes.filter(h => playerScores[h.hole] != null).length !== 18) continue;
+      let hcpScore = 0;
+      for (const h of holes) {
+        hcpScore += calcHandicapScore(playerScores[h.hole], h.par, player.handicap, h.si);
+      }
+      const { cr, slope } = getPlayerCRSlope(player, round);
+      const diff = calcDifferential(hcpScore, cr, slope);
+      if (diff !== null) diffs.push(diff);
+    }
+    result.set(member.id, calcSuggestedHandicap(diffs));
+  }
+  return result;
+}
+
 async function createGroupRound(courseName, holes, courseKey, date, selectedMembers, courseRating = null, slopeRating = null) {
   const code = genCode();
   const playersObj = {};
@@ -1314,6 +1355,26 @@ function getPlayerCRSlope(player, round) {
   return { cr: round.courseRating ?? null, slope: round.slopeRating ?? null };
 }
 
+function calcSuggestedHandicap(differentials) {
+  const recent = differentials.slice(0, 20);
+  const n = recent.length;
+  if (n === 0) return null;
+  // [minRounds, useCount, adjustment] — WHS table extended to 1-2 rounds
+  const table = [
+    [1, 1, -2.0], [2, 1, -1.0], [3, 1, -2.0], [4, 1, -1.0],
+    [5, 1,  0  ], [6, 2, -1.0], [7, 2,  0  ], [9, 3,  0  ],
+    [12, 4, 0  ], [15, 5, 0  ], [17, 6, 0  ], [19, 7, 0  ], [20, 8, 0]
+  ];
+  let useCount = 1, adjustment = -2.0;
+  for (const [min, count, adj] of table) {
+    if (n >= min) { useCount = count; adjustment = adj; }
+  }
+  const sorted = [...recent].sort((a, b) => a - b);
+  const best = sorted.slice(0, useCount);
+  const avg = best.reduce((s, d) => s + d, 0) / best.length;
+  return Math.round((avg * 0.96 + adjustment) * 10) / 10;
+}
+
 function scoreLabel(diff) {
   if (diff <= -3) return { label:'Albatross', color:'var(--gold)' };
   if (diff === -2) return { label:'Eagle', color:'var(--eagle)' };
@@ -1611,10 +1672,15 @@ function renderGroupHome(root) {
               <div id="confirm-remove-${m.id}"></div>
             </div>
             <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-              <span class="player-hcp">HCP</span>
-              <input type="number" class="hcp-inline" id="ghcp-${m.id}"
-                value="${m.handicap ?? 0}" min="0" max="54" step="0.1"
-                style="width:52px;padding:4px 6px;font-size:13px;">
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span class="player-hcp">HCP</span>
+                  <input type="number" class="hcp-inline" id="ghcp-${m.id}"
+                    value="${m.handicap ?? 0}" min="0" max="54" step="0.1"
+                    style="width:52px;padding:4px 6px;font-size:13px;">
+                </div>
+                <span id="sugg-${m.id}" style="font-size:10px;color:var(--gold);opacity:0.75;letter-spacing:0.04em;min-height:14px;">Loading...</span>
+              </div>
               <button class="remove-btn remove-member-btn" data-id="${m.id}" data-name="${m.name}"
                 title="Remove member">✕</button>
             </div>
@@ -1671,6 +1737,20 @@ function renderGroupHome(root) {
       if (isNaN(n) || n < 0 || n > 54) return;
       await update(ref(db, `${groupPath(state.groupCode)}/members/${m.id}`), { handicap: n });
     };
+  });
+
+  loadSuggestedHandicaps(group, members).then(suggestions => {
+    members.forEach(m => {
+      const span = document.getElementById(`sugg-${m.id}`);
+      if (!span) return;
+      const sugg = suggestions.get(m.id);
+      span.textContent = sugg != null ? `Suggested: ${sugg.toFixed(1)}` : '';
+    });
+  }).catch(() => {
+    members.forEach(m => {
+      const span = document.getElementById(`sugg-${m.id}`);
+      if (span) span.textContent = '';
+    });
   });
 
   // Edit group name
