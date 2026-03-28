@@ -1294,7 +1294,7 @@ function scoreLabel(diff) {
 function renderScoreEntry(player, hole, scores) {
   const s = (scores[player.id]||{})[hole.hole];
   const extraStroke = calcExtraStroke(player.handicap, hole.si);
-  const diff = s != null ? (s - hole.par - extraStroke) : null;
+  const diff = s != null ? (s - hole.par) : null;
   const lbl = diff != null ? scoreLabel(diff) : null;
   const tee = player.tee || 'yellow';
   const teeData = TEE_INFO[tee];
