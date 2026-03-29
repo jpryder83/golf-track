@@ -579,7 +579,6 @@ function renderConfigScreen(root) {
 
 // ── Join screen ──
 function renderJoin(root) {
-  const sessions = loadSessions();
   const groupSessions = loadGroupSessions();
   root.innerHTML = `
     <div class="join-screen fade-in">
@@ -628,61 +627,6 @@ function renderJoin(root) {
         <button class="btn btn-secondary mt-14" id="join-group-btn">Join Group →</button>
       </div>
 
-      <div class="or-divider">or play a standalone round</div>
-
-      ${sessions.length > 0 ? `
-        <div class="card" style="text-align:left;border-color:rgba(212,168,67,0.25);background:rgba(212,168,67,0.04);margin-bottom:14px;">
-          <div class="section-label">Recent Rounds</div>
-          ${sessions.map(s => `
-            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                  ${s.courseName || 'Unknown course'}
-                </div>
-                <div style="font-size:11px;color:var(--muted);margin-top:1px;">
-                  Room <strong style="color:var(--gold);letter-spacing:0.08em;">${s.roomCode}</strong>
-                  &nbsp;·&nbsp; ${s.playerName}
-                </div>
-              </div>
-              <button class="btn-sm resume-btn" data-code="${s.roomCode}" data-name="${s.playerName}"
-                style="background:rgba(212,168,67,0.15);border-color:rgba(212,168,67,0.3);color:var(--gold);white-space:nowrap;">
-                Resume →
-              </button>
-              <button class="btn-sm forget-btn" data-code="${s.roomCode}"
-                style="color:rgba(255,100,100,0.5);border-color:rgba(255,100,100,0.2);">
-                Forget
-              </button>
-            </div>
-          `).join('')}
-        </div>
-      ` : ''}
-
-      <div class="card" style="text-align:left;">
-        <div class="section-label">Start a New Round</div>
-        <input type="date" id="new-date" value="${todayDate()}" style="margin-bottom:10px;">
-        <select id="course-select" style="margin-bottom:10px;">
-          <option value="">-- Select a course --</option>
-          ${Object.entries(COURSES).map(([k,c])=>`<option value="${k}">${c.name}, ${c.location}</option>`).join('')}
-          <option value="other">Other / Custom</option>
-        </select>
-        <input type="text" id="new-course" placeholder="Course name" style="margin-bottom:10px;display:none;">
-        <div id="new-cr-slope" style="display:none;gap:8px;margin-bottom:10px;">
-          <input type="number" id="new-cr" placeholder="Course Rating (e.g. 69.5)" step="0.1" style="flex:1;">
-          <input type="number" id="new-slope" placeholder="Slope (e.g. 113)" step="1" style="flex:1;">
-        </div>
-        <input type="text" id="new-player" placeholder="Your name">
-        <button class="btn btn-primary mt-14" id="create-btn">Create Round</button>
-      </div>
-
-      <div class="or-divider">or</div>
-
-      <div class="card" style="text-align:left;">
-        <div class="section-label">Join Existing Round</div>
-        <input type="text" id="join-code" placeholder="4-letter room code" maxlength="4"
-          style="text-transform:uppercase;letter-spacing:0.14em;font-size:18px;text-align:center;">
-        <input type="text" id="join-player" placeholder="Your name" style="margin-top:8px;">
-        <button class="btn btn-secondary mt-14" id="join-btn">Join Round →</button>
-      </div>
     </div>
   `;
 
@@ -710,95 +654,8 @@ function renderJoin(root) {
   };
   document.getElementById('join-group-code').oninput = e => { e.target.value = e.target.value.toUpperCase(); };
 
-  // Round resume/forget
-  root.querySelectorAll('.resume-btn').forEach(btn => {
-    btn.onclick = () => joinRound(btn.dataset.code, btn.dataset.name);
-  });
-  root.querySelectorAll('.forget-btn').forEach(btn => {
-    btn.onclick = () => { forgetSession(btn.dataset.code); render(); };
-  });
-
-  // Prefill from URL param
-  const params = new URLSearchParams(window.location.search);
-  const codeParam = params.get('room');
-  if (codeParam) {
-    document.getElementById('join-code').value = codeParam.toUpperCase();
-    document.getElementById('join-player').focus();
-  }
-
-  document.getElementById('course-select').onchange = (e) => {
-    const isOther = e.target.value === 'other';
-    document.getElementById('new-course').style.display = isOther ? 'block' : 'none';
-    document.getElementById('new-cr-slope').style.display = isOther ? 'flex' : 'none';
-  };
-
-  document.getElementById('create-btn').onclick = async () => {
-    const playerName = document.getElementById('new-player').value.trim();
-    const courseKey = document.getElementById('course-select').value;
-    const date = document.getElementById('new-date').value || todayDate();
-    if (!playerName) { toast('Enter your name', 'error'); return; }
-    if (!courseKey) { toast('Select a course', 'error'); return; }
-    let courseName, holes, courseRating = null, slopeRating = null;
-    if (courseKey === 'other') {
-      courseName = document.getElementById('new-course').value.trim() || 'Custom Course';
-      holes = DEFAULT_HOLES;
-      courseRating = parseFloat(document.getElementById('new-cr').value) || null;
-      slopeRating = parseFloat(document.getElementById('new-slope').value) || null;
-      await createRound(playerName, courseName, holes, null, date, courseRating, slopeRating);
-    } else {
-      const c = COURSES[courseKey];
-      courseName = `${c.name}, ${c.location}`;
-      holes = c.holes;
-      await createRound(playerName, courseName, holes, courseKey, date);
-    }
-  };
-  document.getElementById('join-btn').onclick = async () => {
-    const code = document.getElementById('join-code').value.trim().toUpperCase();
-    const playerName = document.getElementById('join-player').value.trim();
-    if (!code || code.length !== 4) { toast('Enter a 4-letter room code', 'error'); return; }
-    if (!playerName) { toast('Enter your name', 'error'); return; }
-    await joinRound(code, playerName);
-  };
-  document.getElementById('join-code').oninput = e => {
-    e.target.value = e.target.value.toUpperCase();
-  };
 }
 
-// ── Create round ──
-async function createRound(playerName, courseName, holes, courseKey, date, courseRating = null, slopeRating = null) {
-  const code = genCode();
-  const playerId = 'p_' + Date.now();
-  const roundData = {
-    courseName: courseName || '',
-    courseKey: courseKey || null,
-    courseRating: courseRating,
-    slopeRating: slopeRating,
-    date: date || todayDate(),
-    createdAt: Date.now(),
-    createdBy: playerName,
-    status: 'setup',
-    holes: holes || DEFAULT_HOLES,
-    players: {
-      [playerId]: { name: playerName, handicap: 0, tee: 'yellow', id: playerId, joinedAt: Date.now() }
-    },
-    scores: {},
-  };
-  try {
-    await set(ref(db, roomPath(code)), roundData);
-    state.roomCode = code;
-    state.playerName = playerName;
-    state.round = roundData;
-    state.view = 'setup';
-    subscribeToRound(code);
-    updateURL(code);
-    saveSession(code, playerName, courseName);
-    toast(`Round created! Share code: ${code}`);
-    render();
-  } catch(e) {
-    toast('Failed to create round. Check Firebase config.', 'error');
-    console.error(e);
-  }
-}
 
 // ── Join round ──
 async function joinRound(code, playerName) {
@@ -1039,7 +896,6 @@ async function createGroupRound(courseName, holes, courseKey, date, selectedMemb
     state.view = 'setup';
     subscribeToRound(code);
     updateURL(code);
-    saveSession(code, state.groupPlayerName, courseName);
     toast('Round created!');
     render();
   } catch(e) { toast('Failed to create round.', 'error'); console.error(e); }
