@@ -360,19 +360,18 @@ const COURSES = {
     location: 'Alderley Edge',
     par: 34,
     tees: ['white','yellow','red'],
-    cr:     { white: 68.9, yellow: 68.2, red: 71.9 },
-    slope:  { white: 126,  yellow: 125,  red: 127  },
-    slope9: { white: 128,  yellow: 126,  red: 131  },
+    cr:    { white: 34.6, yellow: 34.2, red: 36.0 },
+    slope: { white: 127,  yellow: 127,  red: 127  },
     holes: [
-      { hole:1, par:4, si:9,  yards:{white:418} },
-      { hole:2, par:5, si:13, yards:{white:444} },
-      { hole:3, par:4, si:5,  yards:{white:439} },
-      { hole:4, par:3, si:15, yards:{white:146} },
-      { hole:5, par:4, si:3,  yards:{white:365} },
-      { hole:6, par:3, si:17, yards:{white:124} },
-      { hole:7, par:4, si:1,  yards:{white:430} },
-      { hole:8, par:3, si:7,  yards:{white:171} },
-      { hole:9, par:4, si:11, yards:{white:368} },
+      { hole:1, par:4, si:5, parRed:5, siRed:6, yards:{white:418, yellow:409, red:402} },
+      { hole:2, par:5, si:7, parRed:4, siRed:1, yards:{white:444, yellow:427, red:373} },
+      { hole:3, par:4, si:3, parRed:5, siRed:4, yards:{white:439, yellow:435, red:430} },
+      { hole:4, par:3, si:8,           siRed:8, yards:{white:146, yellow:137, red:129} },
+      { hole:5, par:4, si:2,           siRed:2, yards:{white:365, yellow:357, red:289} },
+      { hole:6, par:3, si:9,           siRed:9, yards:{white:124, yellow:119, red:128} },
+      { hole:7, par:4, si:1, parRed:5, siRed:3, yards:{white:430, yellow:425, red:429} },
+      { hole:8, par:3, si:4,           siRed:7, yards:{white:171, yellow:172, red:128} },
+      { hole:9, par:4, si:6,           siRed:5, yards:{white:368, yellow:342, red:309} },
     ]
   },
   'malkins-bank': {
@@ -983,19 +982,17 @@ async function loadSuggestedHandicaps(group, members) {
       if (!player) continue;
       const playerScores = (round.scores || {})[player.id] || {};
       if (holes.filter(h => playerScores[h.hole] != null).length !== numHoles) continue;
+      const tee = player.tee || 'yellow';
       let hcpScore = 0;
       for (const h of holes) {
-        hcpScore += calcHandicapScore(playerScores[h.hole], h.par, player.handicap, h.si, numHoles);
+        hcpScore += calcHandicapScore(playerScores[h.hole], effectivePar(h, tee), player.handicap, effectiveSI(h, tee), numHoles);
       }
       const { cr, slope } = getPlayerCRSlope(player, round);
       if (numHoles === 18) {
         const diff = calcDifferential(hcpScore, cr, slope);
         if (diff !== null) allDiffs.push({ diff, date: round.date || '' });
       } else {
-        const cr9 = cr != null ? cr / 2 : null;
-        const tee = player.tee || 'yellow';
-        const slope9 = (round.courseKey && COURSES[round.courseKey]?.slope9?.[tee]) ?? slope;
-        if (cr9 !== null && slope9 != null) nineHoleRecords.push({ hcpScore, cr9, slope9, date: round.date || '' });
+        if (cr !== null && slope != null) nineHoleRecords.push({ hcpScore, cr9: cr, slope9: slope, date: round.date || '' });
       }
     }
 
@@ -1297,10 +1294,11 @@ function renderScoring(root) {
 
   // Totals
   const totals = players.map(p => {
+    const tee = p.tee || 'yellow';
     let gross=0, net=0, hcpScore=0, played=0;
     holes.forEach(h => {
       const s = (scores[p.id]||{})[h.hole];
-      if (s != null) { gross+=s; net+=(s - h.par - calcExtraStroke(p.handicap, h.si, holes.length)); hcpScore+=calcHandicapScore(s, h.par, p.handicap, h.si, holes.length); played++; }
+      if (s != null) { gross+=s; net+=(s - effectivePar(h,tee) - calcExtraStroke(p.handicap, effectiveSI(h,tee), holes.length)); hcpScore+=calcHandicapScore(s, effectivePar(h,tee), p.handicap, effectiveSI(h,tee), holes.length); played++; }
     });
     return { ...p, gross, net, hcpScore, played };
   }).sort((a,b)=>a.net-b.net);
@@ -1380,6 +1378,16 @@ function calcHandicapScore(gross, par, handicap, si, numHoles = 18) {
   return Math.min(gross, max);
 }
 
+function effectivePar(hole, tee) {
+  if (tee === 'red' && hole.parRed != null) return hole.parRed;
+  return hole.par;
+}
+
+function effectiveSI(hole, tee) {
+  if (tee === 'red' && hole.siRed != null) return hole.siRed;
+  return hole.si;
+}
+
 function calcDifferential(hcpScore, cr, slope) {
   if (cr == null || slope == null || !slope) return null;
   return Math.round((hcpScore - cr) * 113 / slope * 10) / 10;
@@ -1427,8 +1435,10 @@ function scoreLabel(diff) {
 
 function renderScoreEntry(player, hole, scores, numHoles = 18) {
   const s = (scores[player.id]||{})[hole.hole];
-  const extraStroke = calcExtraStroke(player.handicap, hole.si, numHoles);
-  const diff = s != null ? (s - hole.par) : null;
+  const tee = player.tee || 'yellow';
+  const ePar = effectivePar(hole, tee);
+  const extraStroke = calcExtraStroke(player.handicap, effectiveSI(hole, tee), numHoles);
+  const diff = s != null ? (s - ePar) : null;
   const lbl = diff != null ? scoreLabel(diff) : null;
   const tee = player.tee || 'yellow';
   const teeData = TEE_INFO[tee];
@@ -1452,7 +1462,7 @@ function renderScoreEntry(player, hole, scores, numHoles = 18) {
         ${lbl ? `<span class="score-badge" style="color:${lbl.color};background:${lbl.color}22;">${lbl.label}</span>` : ''}
         <button class="adj-btn" id="dec-${player.id}" ${(s!=null&&s<=1)?'disabled':''}>−</button>
         <input type="number" class="score-input" id="inp-${player.id}"
-          value="${s??''}" placeholder="${hole.par}" min="1" max="15">
+          value="${s??''}" placeholder="${ePar}" min="1" max="15">
         <button class="adj-btn" id="inc-${player.id}">+</button>
       </div>
     </div>
@@ -1497,30 +1507,22 @@ function renderLeaderboard(root) {
   const totalPar = holes.reduce((a,h)=>a+h.par,0);
 
   const lb = players.map(p => {
+    const tee = p.tee || 'yellow';
     let gross=0, net=0, hcpScore=0, played=0, frontGross=0, backGross=0, stableford=0, frontSF=0, backSF=0;
     holes.forEach((h,i) => {
       const s = (scores[p.id]||{})[h.hole];
       if (s != null) {
         played++;
         gross+=s;
-        net+=(s - h.par - calcExtraStroke(p.handicap, h.si, holes.length));
-        hcpScore+=calcHandicapScore(s, h.par, p.handicap, h.si, holes.length);
-        const pts = Math.max(0, 2 - (s - h.par - calcExtraStroke(p.handicap, h.si, holes.length)));
+        net+=(s - effectivePar(h,tee) - calcExtraStroke(p.handicap, effectiveSI(h,tee), holes.length));
+        hcpScore+=calcHandicapScore(s, effectivePar(h,tee), p.handicap, effectiveSI(h,tee), holes.length);
+        const pts = Math.max(0, 2 - (s - effectivePar(h,tee) - calcExtraStroke(p.handicap, effectiveSI(h,tee), holes.length)));
         stableford+=pts;
         if(i<9) { frontGross+=s; frontSF+=pts; } else { backGross+=s; backSF+=pts; }
       }
     });
     const { cr, slope } = getPlayerCRSlope(p, round);
-    let differential = null;
-    if (played === holes.length) {
-      if (holes.length === 9) {
-        const cr9 = cr != null ? cr / 2 : null;
-        const s9 = (round.courseKey && COURSES[round.courseKey]?.slope9?.[p.tee || 'yellow']) ?? slope;
-        differential = calcDifferential(hcpScore, cr9, s9);
-      } else {
-        differential = calcDifferential(hcpScore, cr, slope);
-      }
-    }
+    const differential = played === holes.length ? calcDifferential(hcpScore, cr, slope) : null;
     return { ...p, gross, net, hcpScore, differential, played, frontGross, backGross, stableford, frontSF, backSF };
   }).sort((a,b)=>b.stableford-a.stableford);
 
@@ -1605,13 +1607,13 @@ function renderLeaderboard(root) {
                     <td style="text-align:left;white-space:nowrap;color:var(--green-accent);">Stableford</td>
                     ${holes.slice(0,9).map(h => {
                       const s = ps[h.hole];
-                      const pts = s!=null ? Math.max(0, 2-(s-h.par-calcExtraStroke(p.handicap,h.si,holes.length))) : null;
+                      const pts = s!=null ? Math.max(0, 2-(s-effectivePar(h,p.tee||'yellow')-calcExtraStroke(p.handicap,effectiveSI(h,p.tee||'yellow'),holes.length))) : null;
                       return `<td style="color:var(--green-accent)">${pts??'—'}</td>`;
                     }).join('')}
                     <td class="out-col" style="color:var(--green-accent)">${p.frontSF||'—'}</td>
                     ${holes.slice(9).map(h => {
                       const s = ps[h.hole];
-                      const pts = s!=null ? Math.max(0, 2-(s-h.par-calcExtraStroke(p.handicap,h.si,holes.length))) : null;
+                      const pts = s!=null ? Math.max(0, 2-(s-effectivePar(h,p.tee||'yellow')-calcExtraStroke(p.handicap,effectiveSI(h,p.tee||'yellow'),holes.length))) : null;
                       return `<td style="color:var(--green-accent)">${pts??'—'}</td>`;
                     }).join('')}
                     <td class="in-col" style="color:var(--green-accent)">${p.backSF||'—'}</td>
@@ -1621,18 +1623,18 @@ function renderLeaderboard(root) {
                     <td style="text-align:left;white-space:nowrap;color:var(--gold);">Hcp Score</td>
                     ${holes.slice(0,9).map(h => {
                       const s = ps[h.hole];
-                      const hs = s!=null ? calcHandicapScore(s, h.par, p.handicap, h.si, holes.length) : null;
+                      const hs = s!=null ? calcHandicapScore(s, effectivePar(h,p.tee||'yellow'), p.handicap, effectiveSI(h,p.tee||'yellow'), holes.length) : null;
                       const capped = s!=null && hs < s;
                       return `<td style="color:var(--gold)${capped?';font-weight:600;':''}">${hs??'—'}</td>`;
                     }).join('')}
-                    <td class="out-col" style="color:var(--gold)">${holes.slice(0,9).reduce((a,h)=>{const s=ps[h.hole];return s!=null?a+calcHandicapScore(s,h.par,p.handicap,h.si,holes.length):a;},0)||'—'}</td>
+                    <td class="out-col" style="color:var(--gold)">${holes.slice(0,9).reduce((a,h)=>{const s=ps[h.hole];return s!=null?a+calcHandicapScore(s,effectivePar(h,p.tee||'yellow'),p.handicap,effectiveSI(h,p.tee||'yellow'),holes.length):a;},0)||'—'}</td>
                     ${holes.slice(9).map(h => {
                       const s = ps[h.hole];
-                      const hs = s!=null ? calcHandicapScore(s, h.par, p.handicap, h.si, holes.length) : null;
+                      const hs = s!=null ? calcHandicapScore(s, effectivePar(h,p.tee||'yellow'), p.handicap, effectiveSI(h,p.tee||'yellow'), holes.length) : null;
                       const capped = s!=null && hs < s;
                       return `<td style="color:var(--gold)${capped?';font-weight:600;':''}">${hs??'—'}</td>`;
                     }).join('')}
-                    <td class="in-col" style="color:var(--gold)">${holes.slice(9).reduce((a,h)=>{const s=ps[h.hole];return s!=null?a+calcHandicapScore(s,h.par,p.handicap,h.si,holes.length):a;},0)||'—'}</td>
+                    <td class="in-col" style="color:var(--gold)">${holes.slice(9).reduce((a,h)=>{const s=ps[h.hole];return s!=null?a+calcHandicapScore(s,effectivePar(h,p.tee||'yellow'),p.handicap,effectiveSI(h,p.tee||'yellow'),holes.length):a;},0)||'—'}</td>
                     <td class="tot-col" style="color:var(--gold);font-weight:600;">${p.hcpScore||'—'}</td>
                   </tr>
                 `;
