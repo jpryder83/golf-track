@@ -360,8 +360,9 @@ const COURSES = {
     location: 'Alderley Edge',
     par: 34,
     tees: ['white','yellow','red'],
-    cr:    { white: 68.9, yellow: 68.2, red: 71.9 },
-    slope: { white: 126,  yellow: 125,  red: 127  },
+    cr:     { white: 68.9, yellow: 68.2, red: 71.9 },
+    slope:  { white: 126,  yellow: 125,  red: 127  },
+    slope9: { white: 128,  yellow: 126,  red: 131  },
     holes: [
       { hole:1, par:4, si:9,  yards:{white:418} },
       { hole:2, par:5, si:13, yards:{white:444} },
@@ -970,23 +971,43 @@ async function loadSuggestedHandicaps(group, members) {
 
   for (const member of members) {
     const memberNameLower = member.name.toLowerCase();
-    const diffs = [];
+    const allDiffs = []; // { diff, date }
+    const nineHoleRecords = []; // { hcpScore, cr9, slope9, date }
+
     for (const round of fullRounds) {
       if (!round) continue;
       const holes = round.holes || [];
-      if (holes.length !== 18) continue;
+      const numHoles = holes.length;
+      if (numHoles !== 18 && numHoles !== 9) continue;
       const player = Object.values(round.players || {}).find(p => p.name.toLowerCase() === memberNameLower);
       if (!player) continue;
       const playerScores = (round.scores || {})[player.id] || {};
-      if (holes.filter(h => playerScores[h.hole] != null).length !== 18) continue;
+      if (holes.filter(h => playerScores[h.hole] != null).length !== numHoles) continue;
       let hcpScore = 0;
       for (const h of holes) {
-        hcpScore += calcHandicapScore(playerScores[h.hole], h.par, player.handicap, h.si);
+        hcpScore += calcHandicapScore(playerScores[h.hole], h.par, player.handicap, h.si, numHoles);
       }
       const { cr, slope } = getPlayerCRSlope(player, round);
-      const diff = calcDifferential(hcpScore, cr, slope);
-      if (diff !== null) diffs.push(diff);
+      if (numHoles === 18) {
+        const diff = calcDifferential(hcpScore, cr, slope);
+        if (diff !== null) allDiffs.push({ diff, date: round.date || '' });
+      } else {
+        const cr9 = cr != null ? cr / 2 : null;
+        const tee = player.tee || 'yellow';
+        const slope9 = (round.courseKey && COURSES[round.courseKey]?.slope9?.[tee]) ?? slope;
+        if (cr9 !== null && slope9 != null) nineHoleRecords.push({ hcpScore, cr9, slope9, date: round.date || '' });
+      }
     }
+
+    // Pair 9-hole records chronologically (oldest first) — WHS combines consecutive pairs
+    const sortedNine = [...nineHoleRecords].sort((a, b) => a.date.localeCompare(b.date));
+    for (let i = 0; i + 1 < sortedNine.length; i += 2) {
+      const a = sortedNine[i], b = sortedNine[i + 1];
+      const diff = calcDifferential(a.hcpScore + b.hcpScore, a.cr9 + b.cr9, (a.slope9 + b.slope9) / 2);
+      if (diff !== null) allDiffs.push({ diff, date: b.date });
+    }
+
+    const diffs = allDiffs.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20).map(d => d.diff);
     result.set(member.id, calcSuggestedHandicap(diffs));
   }
   return result;
@@ -1279,7 +1300,7 @@ function renderScoring(root) {
     let gross=0, net=0, hcpScore=0, played=0;
     holes.forEach(h => {
       const s = (scores[p.id]||{})[h.hole];
-      if (s != null) { gross+=s; net+=(s - h.par - calcExtraStroke(p.handicap, h.si)); hcpScore+=calcHandicapScore(s, h.par, p.handicap, h.si); played++; }
+      if (s != null) { gross+=s; net+=(s - h.par - calcExtraStroke(p.handicap, h.si, holes.length)); hcpScore+=calcHandicapScore(s, h.par, p.handicap, h.si, holes.length); played++; }
     });
     return { ...p, gross, net, hcpScore, played };
   }).sort((a,b)=>a.net-b.net);
@@ -1307,7 +1328,7 @@ function renderScoring(root) {
       </div>
 
       <div id="score-entries">
-        ${players.map(p => renderScoreEntry(p, hole, scores)).join('')}
+        ${players.map(p => renderScoreEntry(p, hole, scores, holes.length)).join('')}
       </div>
 
       <div class="card mt-14">
@@ -1349,13 +1370,13 @@ function renderScoring(root) {
   bindScoreEntries(players, hole, scores);
 }
 
-function calcExtraStroke(handicap, si) {
-  const h = Math.round(handicap);
+function calcExtraStroke(handicap, si, numHoles = 18) {
+  const h = Math.round(numHoles === 9 ? handicap / 2 : handicap);
   return Math.floor(h / 18) + (h % 18 >= si ? 1 : 0);
 }
 
-function calcHandicapScore(gross, par, handicap, si) {
-  const max = par + 2 + calcExtraStroke(handicap, si);
+function calcHandicapScore(gross, par, handicap, si, numHoles = 18) {
+  const max = par + 2 + calcExtraStroke(handicap, si, numHoles);
   return Math.min(gross, max);
 }
 
@@ -1404,9 +1425,9 @@ function scoreLabel(diff) {
   return { label:`+${diff}`, color:'var(--double)' };
 }
 
-function renderScoreEntry(player, hole, scores) {
+function renderScoreEntry(player, hole, scores, numHoles = 18) {
   const s = (scores[player.id]||{})[hole.hole];
-  const extraStroke = calcExtraStroke(player.handicap, hole.si);
+  const extraStroke = calcExtraStroke(player.handicap, hole.si, numHoles);
   const diff = s != null ? (s - hole.par) : null;
   const lbl = diff != null ? scoreLabel(diff) : null;
   const tee = player.tee || 'yellow';
@@ -1482,15 +1503,24 @@ function renderLeaderboard(root) {
       if (s != null) {
         played++;
         gross+=s;
-        net+=(s - h.par - calcExtraStroke(p.handicap, h.si));
-        hcpScore+=calcHandicapScore(s, h.par, p.handicap, h.si);
-        const pts = Math.max(0, 2 - (s - h.par - calcExtraStroke(p.handicap, h.si)));
+        net+=(s - h.par - calcExtraStroke(p.handicap, h.si, holes.length));
+        hcpScore+=calcHandicapScore(s, h.par, p.handicap, h.si, holes.length);
+        const pts = Math.max(0, 2 - (s - h.par - calcExtraStroke(p.handicap, h.si, holes.length)));
         stableford+=pts;
         if(i<9) { frontGross+=s; frontSF+=pts; } else { backGross+=s; backSF+=pts; }
       }
     });
     const { cr, slope } = getPlayerCRSlope(p, round);
-    const differential = played === holes.length ? calcDifferential(hcpScore, cr, slope) : null;
+    let differential = null;
+    if (played === holes.length) {
+      if (holes.length === 9) {
+        const cr9 = cr != null ? cr / 2 : null;
+        const s9 = (round.courseKey && COURSES[round.courseKey]?.slope9?.[p.tee || 'yellow']) ?? slope;
+        differential = calcDifferential(hcpScore, cr9, s9);
+      } else {
+        differential = calcDifferential(hcpScore, cr, slope);
+      }
+    }
     return { ...p, gross, net, hcpScore, differential, played, frontGross, backGross, stableford, frontSF, backSF };
   }).sort((a,b)=>b.stableford-a.stableford);
 
@@ -1575,13 +1605,13 @@ function renderLeaderboard(root) {
                     <td style="text-align:left;white-space:nowrap;color:var(--green-accent);">Stableford</td>
                     ${holes.slice(0,9).map(h => {
                       const s = ps[h.hole];
-                      const pts = s!=null ? Math.max(0, 2-(s-h.par-calcExtraStroke(p.handicap,h.si))) : null;
+                      const pts = s!=null ? Math.max(0, 2-(s-h.par-calcExtraStroke(p.handicap,h.si,holes.length))) : null;
                       return `<td style="color:var(--green-accent)">${pts??'—'}</td>`;
                     }).join('')}
                     <td class="out-col" style="color:var(--green-accent)">${p.frontSF||'—'}</td>
                     ${holes.slice(9).map(h => {
                       const s = ps[h.hole];
-                      const pts = s!=null ? Math.max(0, 2-(s-h.par-calcExtraStroke(p.handicap,h.si))) : null;
+                      const pts = s!=null ? Math.max(0, 2-(s-h.par-calcExtraStroke(p.handicap,h.si,holes.length))) : null;
                       return `<td style="color:var(--green-accent)">${pts??'—'}</td>`;
                     }).join('')}
                     <td class="in-col" style="color:var(--green-accent)">${p.backSF||'—'}</td>
@@ -1591,18 +1621,18 @@ function renderLeaderboard(root) {
                     <td style="text-align:left;white-space:nowrap;color:var(--gold);">Hcp Score</td>
                     ${holes.slice(0,9).map(h => {
                       const s = ps[h.hole];
-                      const hs = s!=null ? calcHandicapScore(s, h.par, p.handicap, h.si) : null;
+                      const hs = s!=null ? calcHandicapScore(s, h.par, p.handicap, h.si, holes.length) : null;
                       const capped = s!=null && hs < s;
                       return `<td style="color:var(--gold)${capped?';font-weight:600;':''}">${hs??'—'}</td>`;
                     }).join('')}
-                    <td class="out-col" style="color:var(--gold)">${holes.slice(0,9).reduce((a,h)=>{const s=ps[h.hole];return s!=null?a+calcHandicapScore(s,h.par,p.handicap,h.si):a;},0)||'—'}</td>
+                    <td class="out-col" style="color:var(--gold)">${holes.slice(0,9).reduce((a,h)=>{const s=ps[h.hole];return s!=null?a+calcHandicapScore(s,h.par,p.handicap,h.si,holes.length):a;},0)||'—'}</td>
                     ${holes.slice(9).map(h => {
                       const s = ps[h.hole];
-                      const hs = s!=null ? calcHandicapScore(s, h.par, p.handicap, h.si) : null;
+                      const hs = s!=null ? calcHandicapScore(s, h.par, p.handicap, h.si, holes.length) : null;
                       const capped = s!=null && hs < s;
                       return `<td style="color:var(--gold)${capped?';font-weight:600;':''}">${hs??'—'}</td>`;
                     }).join('')}
-                    <td class="in-col" style="color:var(--gold)">${holes.slice(9).reduce((a,h)=>{const s=ps[h.hole];return s!=null?a+calcHandicapScore(s,h.par,p.handicap,h.si):a;},0)||'—'}</td>
+                    <td class="in-col" style="color:var(--gold)">${holes.slice(9).reduce((a,h)=>{const s=ps[h.hole];return s!=null?a+calcHandicapScore(s,h.par,p.handicap,h.si,holes.length):a;},0)||'—'}</td>
                     <td class="tot-col" style="color:var(--gold);font-weight:600;">${p.hcpScore||'—'}</td>
                   </tr>
                 `;
