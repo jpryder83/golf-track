@@ -1441,7 +1441,6 @@ function renderScoreEntry(player, hole, scores, numHoles = 18) {
   const extraStroke = calcExtraStroke(player.handicap, effectiveSI(hole, tee), numHoles);
   const diff = s != null ? (s - ePar) : null;
   const lbl = diff != null ? scoreLabel(diff) : null;
-  const tee = player.tee || 'yellow';
   const teeData = TEE_INFO[tee];
   const rawYards = hole.yards;
   const yards = rawYards && typeof rawYards === 'object' ? rawYards[tee] : rawYards;
