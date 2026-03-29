@@ -1370,7 +1370,8 @@ function renderScoring(root) {
 
 function calcExtraStroke(handicap, si, numHoles = 18) {
   const h = Math.round(numHoles === 9 ? handicap / 2 : handicap);
-  return Math.floor(h / 18) + (h % 18 >= si ? 1 : 0);
+  const n = numHoles === 9 ? 9 : 18;
+  return Math.floor(h / n) + (h % n >= si ? 1 : 0);
 }
 
 function calcHandicapScore(gross, par, handicap, si, numHoles = 18) {
