@@ -525,7 +525,7 @@ let roundRef = null;
 let unsubscribe = null;
 let groupUnsubscribe = null;
 let state = {
-  view: 'join',       // join | config | setup | scoring | leaderboard | group-home | new-group-round | tournament-detail
+  view: 'join',       // join | config | setup | scoring | leaderboard | group-home | new-group-round | tournament-detail | group-join-identity
   roomCode: null,
   playerName: null,   // this device's player name in the current round
   round: null,        // live Firebase data
@@ -538,6 +538,8 @@ let state = {
   tournamentId: null,
   penaltiesPanelOpen: false,
   penaltiesSelectedPlayer: null,
+  pendingGroupCode: null,
+  pendingGroup: null,
 };
 
 // ── Helpers ──
@@ -637,6 +639,8 @@ function render() {
     renderConfigScreen(root);
   } else if (state.view === 'join') {
     renderJoin(root);
+  } else if (state.view === 'group-join-identity') {
+    renderGroupJoinIdentity(root);
   } else if (state.view === 'group-home') {
     renderGroupHome(root);
   } else if (state.view === 'new-group-round') {
@@ -778,6 +782,82 @@ function renderJoin(root) {
 }
 
 
+// ── Group join identity screen (shown when arriving via shared group link) ──
+function renderGroupJoinIdentity(root) {
+  const code = state.pendingGroupCode;
+  const group = state.pendingGroup;
+
+  function goBack() {
+    state.view = 'join';
+    state.pendingGroupCode = null;
+    state.pendingGroup = null;
+    render();
+  }
+
+  if (!group) {
+    root.innerHTML = `
+      <div class="join-screen fade-in">
+        <div class="join-title">⛳ Scorecard</div>
+        <div style="text-align:center;color:var(--muted);margin-bottom:20px;">Group not found. The code may be invalid.</div>
+        <button class="btn btn-secondary" id="back-btn">← Back</button>
+      </div>
+    `;
+    document.getElementById('back-btn').onclick = goBack;
+    return;
+  }
+
+  const members = Object.values(group.members || {}).sort((a, b) => a.name.localeCompare(b.name));
+  const savedSessions = loadGroupSessions();
+  const savedName = savedSessions.find(s => s.groupCode === code)?.playerName || null;
+
+  root.innerHTML = `
+    <div class="join-screen fade-in">
+      <div class="join-title">⛳ ${group.name}</div>
+      <div class="join-sub">Who are you?</div>
+
+      ${members.length > 0 ? `
+        <div class="card" style="text-align:left;">
+          <div class="section-label">Select your name</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px;">
+            ${members.map(m => `
+              <button class="player-pill member-select-btn${savedName && savedName.toLowerCase() === m.name.toLowerCase() ? ' selected' : ''}"
+                data-name="${m.name}">
+                ${m.name}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+        <div class="or-divider">or enter a new name</div>
+      ` : ''}
+
+      <div class="card" style="text-align:left;">
+        <div class="section-label">I'm not on the list</div>
+        <input type="text" id="new-member-name" placeholder="Your name" autocomplete="off">
+        <button class="btn btn-secondary mt-14" id="new-member-btn">Join as new member →</button>
+      </div>
+
+      <button style="margin-top:16px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;" id="back-btn">← Back</button>
+    </div>
+  `;
+
+  root.querySelectorAll('.member-select-btn').forEach(btn => {
+    btn.onclick = () => joinGroup(code, btn.dataset.name);
+  });
+
+  document.getElementById('new-member-btn').onclick = async () => {
+    const name = document.getElementById('new-member-name').value.trim();
+    if (!name) { toast('Enter your name', 'error'); return; }
+    const duplicate = members.find(m => m.name.toLowerCase() === name.toLowerCase());
+    if (duplicate) {
+      toast(`"${duplicate.name}" is already in the group — select them above`, 'error');
+      return;
+    }
+    await joinGroup(code, name);
+  };
+
+  document.getElementById('back-btn').onclick = goBack;
+}
+
 // ── Join round ──
 async function joinRound(code, playerName) {
   try {
@@ -907,6 +987,8 @@ async function joinGroup(code, playerName) {
     state.group = data;
     state.groupPlayerName = playerName;
     state.view = 'group-home';
+    state.pendingGroupCode = null;
+    state.pendingGroup = null;
     subscribeToGroup(code);
     saveGroupSession(code, playerName, data.name);
     render();
@@ -2698,17 +2780,27 @@ function renderNewGroupRound(root) {
 
 // ── Boot ──
 const firebaseReady = tryInitFirebase();
-// Pre-fill group code from URL if present
 const _bootParams = new URLSearchParams(window.location.search);
 const _bootGroup = _bootParams.get('group');
-if (_bootGroup) {
-  // Will be picked up in renderJoin's join-group-code field; just navigate there
-  setTimeout(() => {
-    const el = document.getElementById('join-group-code');
-    if (el) { el.value = _bootGroup.toUpperCase(); el.focus(); }
-  }, 50);
+if (_bootGroup && firebaseReady) {
+  // Arriving via shared group link — fetch members and show identity selection
+  const _pendingCode = _bootGroup.toUpperCase();
+  state.pendingGroupCode = _pendingCode;
+  state.view = 'group-join-identity';
+  get(ref(db, groupPath(_pendingCode))).then(snap => {
+    if (snap.exists()) state.pendingGroup = snap.val();
+    render();
+  }).catch(() => render());
+} else {
+  if (_bootGroup) {
+    // Firebase not configured — fall back to pre-filling the join form
+    setTimeout(() => {
+      const el = document.getElementById('join-group-code');
+      if (el) { el.value = _bootGroup.toUpperCase(); el.focus(); }
+    }, 50);
+  }
+  render();
 }
-render();
 </script>
 </body>
 </html>
