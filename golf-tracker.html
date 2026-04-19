@@ -537,6 +537,7 @@ let state = {
   groupPlayerName: null,
   tournamentId: null,
   penaltiesPanelOpen: false,
+  penaltiesSelectedPlayer: null,
 };
 
 // ── Helpers ──
@@ -1681,31 +1682,45 @@ function renderPenaltiesPanel(players, competition) {
     { key: 'lostBalls',       label: 'Lost balls (count, escalating −2/−4)' },
     { key: 'notShoutingFore', label: 'Not shouting fore (−2 each)' },
   ];
-  return players.map(p => {
-    const pen = competition.penalties?.[p.id] || {};
-    const total = allTypes.reduce((s, { key }) => s + (pen[key] || 0), 0);
+  const selId = state.penaltiesSelectedPlayer;
+  const selPlayer = players.find(p => p.id === selId) || null;
+
+  const playerPills = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+      ${players.map(p => {
+        const pen = competition.penalties?.[p.id] || {};
+        const total = allTypes.reduce((s, { key }) => s + (pen[key] || 0), 0);
+        const isSelected = p.id === selId;
+        return `
+          <button class="pen-player-btn player-pill ${isSelected ? 'selected' : ''}" data-pid="${p.id}"
+            style="${isSelected ? '' : total > 0 ? 'border-color:rgba(239,68,68,0.5);' : ''}">
+            ${p.name}${total > 0 ? ` <span style="color:var(--danger);font-size:10px;">(${total})</span>` : ''}
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  if (!selPlayer) {
+    return playerPills + `<div style="font-size:12px;color:var(--muted);text-align:center;padding:8px 0;">Select a player above to record penalties</div>`;
+  }
+
+  const pen = competition.penalties?.[selPlayer.id] || {};
+  const penaltyRows = allTypes.map(({ key, label }) => {
+    const count = pen[key] || 0;
     return `
-      <div style="margin-bottom:10px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;margin-bottom:4px;">
-          <span style="font-size:13px;font-weight:500;">${p.name}</span>
-          ${total > 0 ? `<span style="font-size:11px;color:var(--danger);">${total} total</span>` : ''}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:rgba(0,0,0,0.15);border-radius:6px;margin-bottom:2px;">
+        <span style="font-size:11px;color:${count > 0 ? 'var(--cream)' : 'var(--muted)'};">${label}</span>
+        <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;margin-left:8px;">
+          <button class="pen-adj-btn" data-pid="${selPlayer.id}" data-key="${key}" data-delta="-1" ${count === 0 ? 'disabled' : ''}>−</button>
+          <span style="width:16px;text-align:center;font-size:12px;${count > 0 ? 'color:var(--danger);font-weight:700;' : 'color:var(--muted);'}">${count}</span>
+          <button class="pen-adj-btn" data-pid="${selPlayer.id}" data-key="${key}" data-delta="1">+</button>
         </div>
-        ${allTypes.map(({ key, label }) => {
-          const count = pen[key] || 0;
-          return `
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:rgba(0,0,0,0.15);border-radius:6px;margin-bottom:2px;">
-              <span style="font-size:11px;color:${count > 0 ? 'var(--cream)' : 'var(--muted)'};">${label}</span>
-              <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;margin-left:8px;">
-                <button class="pen-adj-btn" data-pid="${p.id}" data-key="${key}" data-delta="-1" ${count === 0 ? 'disabled' : ''}>−</button>
-                <span style="width:16px;text-align:center;font-size:12px;${count > 0 ? 'color:var(--danger);font-weight:700;' : 'color:var(--muted);'}">${count}</span>
-                <button class="pen-adj-btn" data-pid="${p.id}" data-key="${key}" data-delta="1">+</button>
-              </div>
-            </div>
-          `;
-        }).join('')}
       </div>
     `;
-  }).join('<div style="border-top:1px solid var(--border);margin:6px 0;"></div>');
+  }).join('');
+
+  return playerPills + penaltyRows;
 }
 
 function bindCompetitionSection(players, hole, round) {
@@ -1746,6 +1761,22 @@ function bindCompetitionSection(players, hole, round) {
       if (arrow) arrow.textContent = state.penaltiesPanelOpen ? '▴' : '▾';
     };
   }
+
+  bindPenaltiesPanel(players, round);
+}
+
+function bindPenaltiesPanel(players, round) {
+  document.querySelectorAll('.pen-player-btn').forEach(btn => {
+    btn.onclick = () => {
+      const pid = btn.dataset.pid;
+      state.penaltiesSelectedPlayer = state.penaltiesSelectedPlayer === pid ? null : pid;
+      const panel = document.getElementById('penalties-panel');
+      if (panel) {
+        panel.innerHTML = renderPenaltiesPanel(players, round.competition || {});
+        bindPenaltiesPanel(players, round);
+      }
+    };
+  });
 
   document.querySelectorAll('.pen-adj-btn').forEach(btn => {
     btn.onclick = async () => {
