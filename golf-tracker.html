@@ -302,6 +302,19 @@
 
   @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
   .fade-in { animation: fadeIn 0.25s ease; }
+
+  /* Competition / penalties */
+  .pen-adj-btn {
+    width: 26px; height: 26px; border-radius: 5px; border: 1px solid var(--border);
+    background: rgba(255,255,255,0.07); color: var(--cream); font-size: 15px;
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    line-height: 1; padding: 0; font-family: 'DM Sans', sans-serif; transition: all 0.15s;
+  }
+  .pen-adj-btn:hover:not([disabled]) { background: rgba(255,255,255,0.14); }
+  .pen-adj-btn[disabled] { opacity: 0.25; cursor: default; }
+  .comp-winner-btn { margin: 3px; padding: 5px 12px; font-size: 12px; }
+  .comp-winner-btn.selected { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: #b8ddc4; }
+  .pink-active { color: #ec4899!important; border-color: rgba(236,72,153,0.4)!important; background: rgba(236,72,153,0.1)!important; }
 </style>
 </head>
 <body>
@@ -488,6 +501,25 @@ const COURSES = {
   }
 };
 
+const PENALTY_TYPES = [
+  { key: 'fourPutt',           label: '4-Putt' },
+  { key: 'bunkerToBunker',     label: 'Bunker to bunker' },
+  { key: 'failGetOutBunker',   label: 'Fail to exit bunker' },
+  { key: 'hitWater',           label: 'Hit water' },
+  { key: 'shirtNotTucked',     label: 'Shirt not tucked' },
+  { key: 'playingOutOfTurn',   label: 'Playing out of turn' },
+  { key: 'teeShotLadiesTee',   label: "Tee shot past ladies' tee" },
+  { key: 'hittingTree',        label: 'Hitting a tree' },
+  { key: 'walkingPuttingLine', label: 'Walking on putting line' },
+  { key: 'notRepairingDivot',  label: 'Not repairing divot' },
+  { key: 'clubAbuse',          label: 'Club abuse' },
+  { key: 'missingOneFoot',     label: 'Missing 1-foot putt' },
+  { key: 'ballFallsOffTee',    label: 'Ball falls off tee' },
+  { key: 'askingWhatClub',     label: 'Asking what club' },
+  { key: 'outOfBounds',        label: 'Out of bounds' },
+  { key: 'foreShoutedAtYou',   label: 'Fore shouted at you' },
+];
+
 let db = null;
 let roundRef = null;
 let unsubscribe = null;
@@ -504,6 +536,7 @@ let state = {
   group: null,
   groupPlayerName: null,
   tournamentId: null,
+  penaltiesPanelOpen: false,
 };
 
 // ── Helpers ──
@@ -1275,6 +1308,8 @@ function renderScoring(root) {
         ${players.map(p => renderScoreEntry(p, hole, scores, holes.length)).join('')}
       </div>
 
+      ${renderCompetitionSection(players, hole, round)}
+
       <div class="card mt-14">
         <div class="section-label">Running Totals</div>
         ${totals.map(p => `
@@ -1312,6 +1347,7 @@ function renderScoring(root) {
 
   window._goHole = (n) => { state.currentHole=n; render(); };
   bindScoreEntries(players, hole, scores);
+  bindCompetitionSection(players, hole, round);
 }
 
 function calcExtraStroke(handicap, si, numHoles = 18) {
@@ -1348,6 +1384,43 @@ function getPlayerCRSlope(player, round) {
     return { cr: c.cr?.[tee] ?? null, slope: c.slope?.[tee] ?? null };
   }
   return { cr: round.courseRating ?? null, slope: round.slopeRating ?? null };
+}
+
+function calcCompetitionPoints(playerId, round) {
+  const competition = round.competition || {};
+  const scores = round.scores?.[playerId] || {};
+  let pts = 0;
+
+  // Score a 2 on any hole = +5 pts (auto from scores)
+  for (const score of Object.values(scores)) {
+    if (score === 2) pts += 5;
+  }
+
+  // Hole competition bonuses
+  for (const holeComp of Object.values(competition.holes || {})) {
+    if (holeComp.longestDrive === playerId) pts += 3;
+    if (holeComp.nearestPin === playerId) pts += 2;
+    if (holeComp.nearestPinInTwo === playerId) pts += 2;
+  }
+
+  // Pink ball returned = +2 each player
+  if (competition.pinkBall?.returned === true) pts += 2;
+
+  // Standard -1 penalties
+  const pen = competition.penalties?.[playerId] || {};
+  for (const { key } of PENALTY_TYPES) {
+    pts -= (pen[key] || 0);
+  }
+
+  // Escalating lost balls: 3+ = -2, 6+ = -4 (replaces, not additional)
+  const lost = pen.lostBalls || 0;
+  if (lost >= 6) pts -= 4;
+  else if (lost >= 3) pts -= 2;
+
+  // Not shouting fore: -2 each
+  pts -= (pen.notShoutingFore || 0) * 2;
+
+  return pts;
 }
 
 function calcSuggestedHandicap(differentials) {
@@ -1444,6 +1517,174 @@ function bindScoreEntries(players, hole, scores) {
   });
 }
 
+// ── Competition section (per-hole during scoring) ──
+function renderCompetitionSection(players, hole, round) {
+  const competition = round.competition || {};
+  const ldHole = competition.longestDriveHole || null;
+  const isLDHole = ldHole === hole.hole;
+  const holeComp = competition.holes?.[hole.hole] || {};
+  const ldWinner = holeComp.longestDrive || null;
+  const ntpWinner = holeComp.nearestPin || null;
+  const ntp2Winner = holeComp.nearestPinInTwo || null;
+
+  const allTypes = [...PENALTY_TYPES,
+    { key: 'lostBalls',       label: 'Lost balls (count, escalating −2/−4)' },
+    { key: 'notShoutingFore', label: 'Not shouting fore (−2 each)' },
+  ];
+  const totalPens = players.reduce((sum, p) => {
+    const pen = competition.penalties?.[p.id] || {};
+    return sum + allTypes.reduce((s, { key }) => s + (pen[key] || 0), 0);
+  }, 0);
+
+  const winnerPills = (currentWinner, fieldName, distanceValue, distancePlaceholder) => `
+    <div style="display:flex;gap:0;flex-wrap:wrap;margin-top:6px;">
+      ${players.map(p => `
+        <button class="player-pill comp-winner-btn ${currentWinner === p.id ? 'selected' : ''}"
+          data-field="${fieldName}" data-hole="${hole.hole}" data-pid="${p.id}">
+          ${p.name}
+        </button>
+      `).join('')}
+      <button class="player-pill comp-winner-btn ${!currentWinner ? 'selected' : ''}"
+        data-field="${fieldName}" data-hole="${hole.hole}" data-pid="">
+        —
+      </button>
+    </div>
+    ${currentWinner ? `
+      <div style="font-size:10px;color:var(--muted);margin-top:5px;padding-left:2px;">Tap another player to update &middot; tap — to clear</div>
+      <div style="margin-top:7px;display:flex;align-items:center;gap:7px;">
+        <span style="font-size:11px;color:var(--muted);flex-shrink:0;">Distance:</span>
+        <input type="text" class="comp-distance-input"
+          data-distfield="${fieldName}Distance" data-hole="${hole.hole}"
+          value="${distanceValue || ''}"
+          placeholder="${distancePlaceholder}"
+          style="flex:1;font-size:12px;padding:5px 8px;height:auto;">
+      </div>
+    ` : '<div style="font-size:10px;color:var(--muted);margin-top:5px;padding-left:2px;">Tap a player to set the current leader</div>'}
+  `;
+
+  return `
+    <div class="card mt-14">
+      <div class="section-label" style="margin-bottom:10px;">Competition · Hole ${hole.hole}</div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${isLDHole ? 8 : 10}px;">
+        <span style="font-size:13px;">Longest Drive Hole</span>
+        <button class="btn-sm" id="ld-hole-btn" style="${isLDHole ? 'color:var(--gold);border-color:rgba(212,168,67,0.4);background:rgba(212,168,67,0.1);' : ''}">
+          ${isLDHole ? '★ This hole' : 'Set this hole'}
+        </button>
+      </div>
+
+      ${isLDHole ? `
+        <div style="margin-bottom:12px;padding:10px;background:rgba(212,168,67,0.07);border:1px solid rgba(212,168,67,0.2);border-radius:8px;">
+          <div style="font-size:10px;letter-spacing:0.1em;color:var(--gold);margin-bottom:2px;">LONGEST DRIVE WINNER · +3 pts · must land in fairway</div>
+          ${winnerPills(ldWinner, 'longestDrive', holeComp.longestDriveDistance, 'e.g. 245 yards')}
+        </div>
+      ` : ''}
+
+      ${hole.par === 3 ? `
+        <div style="margin-bottom:12px;padding:10px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.2);border-radius:8px;">
+          <div style="font-size:10px;letter-spacing:0.1em;color:var(--birdie);margin-bottom:2px;">NEAREST THE PIN (Par 3) · +2 pts · must be on green</div>
+          ${winnerPills(ntpWinner, 'nearestPin', holeComp.nearestPinDistance, 'e.g. 6 feet')}
+        </div>
+      ` : ''}
+
+      ${hole.par === 4 ? `
+        <div style="margin-bottom:12px;padding:10px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.2);border-radius:8px;">
+          <div style="font-size:10px;letter-spacing:0.1em;color:var(--birdie);margin-bottom:2px;">NEAREST PIN IN 2 (Par 4) · +2 pts · second shot must be on green</div>
+          ${winnerPills(ntp2Winner, 'nearestPinInTwo', holeComp.nearestPinInTwoDistance, 'e.g. 12 feet')}
+        </div>
+      ` : ''}
+
+      <button class="btn-sm" id="toggle-penalties-btn" style="width:100%;text-align:left;padding:8px 12px;">
+        Penalties${totalPens > 0 ? ` <span style="color:var(--danger);font-size:11px;">(${totalPens} recorded)</span>` : ''} <span id="pen-arrow">${state.penaltiesPanelOpen ? '▴' : '▾'}</span>
+      </button>
+      <div id="penalties-panel" style="display:${state.penaltiesPanelOpen ? 'block' : 'none'};margin-top:8px;">
+        ${renderPenaltiesPanel(players, competition)}
+      </div>
+    </div>
+  `;
+}
+
+function renderPenaltiesPanel(players, competition) {
+  const allTypes = [...PENALTY_TYPES,
+    { key: 'lostBalls',       label: 'Lost balls (count, escalating −2/−4)' },
+    { key: 'notShoutingFore', label: 'Not shouting fore (−2 each)' },
+  ];
+  return players.map(p => {
+    const pen = competition.penalties?.[p.id] || {};
+    const total = allTypes.reduce((s, { key }) => s + (pen[key] || 0), 0);
+    return `
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;margin-bottom:4px;">
+          <span style="font-size:13px;font-weight:500;">${p.name}</span>
+          ${total > 0 ? `<span style="font-size:11px;color:var(--danger);">${total} total</span>` : ''}
+        </div>
+        ${allTypes.map(({ key, label }) => {
+          const count = pen[key] || 0;
+          return `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:rgba(0,0,0,0.15);border-radius:6px;margin-bottom:2px;">
+              <span style="font-size:11px;color:${count > 0 ? 'var(--cream)' : 'var(--muted)'};">${label}</span>
+              <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;margin-left:8px;">
+                <button class="pen-adj-btn" data-pid="${p.id}" data-key="${key}" data-delta="-1" ${count === 0 ? 'disabled' : ''}>−</button>
+                <span style="width:16px;text-align:center;font-size:12px;${count > 0 ? 'color:var(--danger);font-weight:700;' : 'color:var(--muted);'}">${count}</span>
+                <button class="pen-adj-btn" data-pid="${p.id}" data-key="${key}" data-delta="1">+</button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }).join('<div style="border-top:1px solid var(--border);margin:6px 0;"></div>');
+}
+
+function bindCompetitionSection(players, hole, round) {
+  const competition = round.competition || {};
+  const isLDHole = competition.longestDriveHole === hole.hole;
+
+  const ldBtn = document.getElementById('ld-hole-btn');
+  if (ldBtn) {
+    ldBtn.onclick = async () => {
+      const newVal = isLDHole ? null : hole.hole;
+      await update(ref(db, `${roomPath(state.roomCode)}/competition`), { longestDriveHole: newVal });
+    };
+  }
+
+  document.querySelectorAll('.comp-winner-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const { field, hole: holeNum, pid } = btn.dataset;
+      await update(ref(db, `${roomPath(state.roomCode)}/competition/holes/${holeNum}`), { [field]: pid || null });
+    };
+  });
+
+  document.querySelectorAll('.comp-distance-input').forEach(inp => {
+    inp.onchange = async () => {
+      const { distfield, hole: holeNum } = inp.dataset;
+      const val = inp.value.trim() || null;
+      await update(ref(db, `${roomPath(state.roomCode)}/competition/holes/${holeNum}`), { [distfield]: val });
+    };
+    inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
+  });
+
+  const toggleBtn = document.getElementById('toggle-penalties-btn');
+  if (toggleBtn) {
+    toggleBtn.onclick = () => {
+      state.penaltiesPanelOpen = !state.penaltiesPanelOpen;
+      const panel = document.getElementById('penalties-panel');
+      const arrow = document.getElementById('pen-arrow');
+      if (panel) panel.style.display = state.penaltiesPanelOpen ? 'block' : 'none';
+      if (arrow) arrow.textContent = state.penaltiesPanelOpen ? '▴' : '▾';
+    };
+  }
+
+  document.querySelectorAll('.pen-adj-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const { pid, key, delta } = btn.dataset;
+      const currentVal = (state.round.competition?.penalties?.[pid]?.[key]) || 0;
+      const newVal = Math.max(0, currentVal + parseInt(delta));
+      await update(ref(db, `${roomPath(state.roomCode)}/competition/penalties/${pid}`), { [key]: newVal });
+    };
+  });
+}
+
 // ── Leaderboard ──
 function renderLeaderboard(root) {
   const round = state.round;
@@ -1469,7 +1710,8 @@ function renderLeaderboard(root) {
     });
     const { cr, slope } = getPlayerCRSlope(p, round);
     const differential = played === holes.length ? calcDifferential(hcpScore, cr, slope) : null;
-    return { ...p, gross, net, hcpScore, differential, played, frontGross, backGross, stableford, frontSF, backSF };
+    const compPts = calcCompetitionPoints(p.id, round);
+    return { ...p, gross, net, hcpScore, differential, played, frontGross, backGross, stableford, frontSF, backSF, compPts };
   }).sort((a,b)=>b.stableford-a.stableford);
 
   const medals = ['🥇','🥈','🥉'];
@@ -1499,6 +1741,7 @@ function renderLeaderboard(root) {
           <div class="lb-score">
             <div class="lb-net" style="color:var(--green-accent);">
               ${p.stableford} pts
+              ${p.compPts !== 0 ? `<span style="font-size:13px;color:${p.compPts > 0 ? 'var(--gold)' : 'var(--danger)'};">&nbsp;${p.compPts >= 0 ? '+' : ''}${p.compPts} comp</span>` : ''}
             </div>
             <div class="lb-gross">${p.gross} gross · ${p.net>=0?'+'+p.net:p.net} net · <span style="color:var(--gold);">${p.hcpScore} hcp</span>${p.differential!=null?` · <span style="color:var(--muted);">diff ${p.differential>=0?'+':''}${p.differential}</span>`:''}</div>
           </div>
@@ -1590,6 +1833,61 @@ function renderLeaderboard(root) {
         </div>
       </div>
 
+      <div class="card mt-20">
+        <div class="section-label" style="margin-bottom:12px;">Competition</div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:rgba(236,72,153,0.07);border:1px solid rgba(236,72,153,0.2);border-radius:8px;margin-bottom:14px;">
+          <div>
+            <div style="font-size:13px;">Pink Ball</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;">Returned at end of round = +2 pts each player</div>
+          </div>
+          <button class="btn-sm ${round.competition?.pinkBall?.returned ? 'pink-active' : ''}" id="pink-ball-btn">
+            ${round.competition?.pinkBall?.returned ? '✓ Returned' : 'Not returned'}
+          </button>
+        </div>
+
+        <div class="section-label" style="margin-bottom:8px;">Points Breakdown</div>
+        ${lb.map(p => {
+          const competition = round.competition || {};
+          const pScores = scores[p.id] || {};
+          const twos = Object.values(pScores).filter(s => s === 2).length;
+          let ldWins = 0, ldDistance = '';
+          let ntpWins = 0, ntpDistances = [];
+          let ntp2Wins = 0, ntp2Distances = [];
+          for (const hc of Object.values(competition.holes || {})) {
+            if (hc.longestDrive === p.id) { ldWins++; if (hc.longestDriveDistance) ldDistance = hc.longestDriveDistance; }
+            if (hc.nearestPin === p.id) { ntpWins++; if (hc.nearestPinDistance) ntpDistances.push(hc.nearestPinDistance); }
+            if (hc.nearestPinInTwo === p.id) { ntp2Wins++; if (hc.nearestPinInTwoDistance) ntp2Distances.push(hc.nearestPinInTwoDistance); }
+          }
+          const pen = competition.penalties?.[p.id] || {};
+          const stdPenTotal = PENALTY_TYPES.reduce((s, { key }) => s + (pen[key] || 0), 0);
+          const lostBalls = pen.lostBalls || 0;
+          const notFore = pen.notShoutingFore || 0;
+          const lostBallPen = lostBalls >= 6 ? -4 : lostBalls >= 3 ? -2 : 0;
+          const pinkPts = competition.pinkBall?.returned ? 2 : 0;
+          const total = p.compPts;
+          const hasData = twos > 0 || ldWins > 0 || ntpWins > 0 || ntp2Wins > 0 || pinkPts > 0 || stdPenTotal > 0 || lostBalls > 0 || notFore > 0;
+          return `
+            <div style="background:rgba(0,0,0,0.15);border-radius:8px;padding:10px;margin-bottom:6px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${hasData ? 6 : 0}px;">
+                <span style="font-size:14px;font-weight:500;">${p.name}</span>
+                <span style="font-size:15px;font-weight:700;color:${total > 0 ? 'var(--gold)' : total < 0 ? 'var(--danger)' : 'var(--muted)'};">${total >= 0 ? '+' : ''}${total} pts</span>
+              </div>
+              ${hasData ? `<div style="font-size:11px;color:var(--muted);display:flex;flex-wrap:wrap;gap:5px;">
+                ${twos > 0 ? `<span style="color:var(--green-accent);">+${twos * 5} (${twos}× score 2)</span>` : ''}
+                ${ldWins > 0 ? `<span style="color:var(--gold);">+${ldWins * 3} longest drive${ldDistance ? ` · ${ldDistance}` : ''}</span>` : ''}
+                ${ntpWins > 0 ? `<span style="color:var(--birdie);">+${ntpWins * 2} nearest pin${ntpDistances.length ? ` · ${ntpDistances.join(', ')}` : ''}</span>` : ''}
+                ${ntp2Wins > 0 ? `<span style="color:var(--birdie);">+${ntp2Wins * 2} nearest pin in 2${ntp2Distances.length ? ` · ${ntp2Distances.join(', ')}` : ''}</span>` : ''}
+                ${pinkPts > 0 ? `<span style="color:#ec4899;">+${pinkPts} pink ball</span>` : ''}
+                ${stdPenTotal > 0 ? `<span style="color:var(--danger);">−${stdPenTotal} penalties</span>` : ''}
+                ${lostBallPen !== 0 ? `<span style="color:var(--danger);">${lostBallPen} lost balls (${lostBalls})</span>` : lostBalls > 0 ? `<span style="color:var(--muted);">${lostBalls} balls lost (no pen yet)</span>` : ''}
+                ${notFore > 0 ? `<span style="color:var(--danger);">−${notFore * 2} not shouting fore</span>` : ''}
+              </div>` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+
       <button class="btn btn-secondary mt-14" id="new-round-btn">Start New Round</button>
       <button class="btn mt-8" id="delete-round-btn"
         style="background:none;border:1px solid rgba(255,100,100,0.25);color:rgba(255,100,100,0.5);font-size:13px;">
@@ -1606,6 +1904,14 @@ function renderLeaderboard(root) {
       await update(ref(db, `${roomPath(state.roomCode)}/players/${p.id}`), { handicap: n });
     };
   });
+
+  const pinkBtn = document.getElementById('pink-ball-btn');
+  if (pinkBtn) {
+    pinkBtn.onclick = async () => {
+      const current = state.round.competition?.pinkBall?.returned;
+      await update(ref(db, `${roomPath(state.roomCode)}/competition/pinkBall`), { returned: !current });
+    };
+  }
 
   const navScoring = document.getElementById('nav-scoring');
   if (navScoring) navScoring.onclick = () => { state.view='scoring'; render(); };
@@ -1963,13 +2269,16 @@ async function loadTournamentRankings(roundCodes) {
         sf += stableford;
       }
 
+      const compPts = calcCompetitionPoints(player.id, round);
+
       const key = player.name.toLowerCase();
       if (!playerMap.has(key)) {
-        playerMap.set(key, { name: player.name, rounds: 0, totalSF: 0, bestSF: -Infinity });
+        playerMap.set(key, { name: player.name, rounds: 0, totalSF: 0, bestSF: -Infinity, totalComp: 0 });
       }
       const entry = playerMap.get(key);
       entry.rounds++;
       entry.totalSF += sf;
+      entry.totalComp += compPts;
       if (sf > entry.bestSF) entry.bestSF = sf;
     }
   }
@@ -2116,6 +2425,7 @@ function renderTournamentDetail(root) {
               <th style="padding:6px 4px;text-align:center;">Rounds</th>
               <th style="padding:6px 4px;text-align:center;">Total SF</th>
               <th style="padding:6px 4px;text-align:center;">Best SF</th>
+              <th style="padding:6px 4px;text-align:center;">Comp</th>
             </tr>
           </thead>
           <tbody>
@@ -2126,6 +2436,7 @@ function renderTournamentDetail(root) {
                 <td style="padding:8px 4px;text-align:center;color:var(--muted);">${p.rounds}</td>
                 <td style="padding:8px 4px;text-align:center;color:var(--green-accent);font-weight:700;">${p.totalSF}</td>
                 <td style="padding:8px 4px;text-align:center;color:var(--gold);">${p.bestSF}</td>
+                <td style="padding:8px 4px;text-align:center;color:${p.totalComp > 0 ? 'var(--gold)' : p.totalComp < 0 ? 'var(--danger)' : 'var(--muted)'};">${p.totalComp >= 0 ? '+' : ''}${p.totalComp}</td>
               </tr>
             `).join('')}
           </tbody>
