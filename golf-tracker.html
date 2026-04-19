@@ -1536,7 +1536,7 @@ function renderCompetitionSection(players, hole, round) {
     return sum + allTypes.reduce((s, { key }) => s + (pen[key] || 0), 0);
   }, 0);
 
-  const winnerPills = (currentWinner, fieldName) => `
+  const winnerPills = (currentWinner, fieldName, distanceValue, distancePlaceholder) => `
     <div style="display:flex;gap:0;flex-wrap:wrap;margin-top:6px;">
       ${players.map(p => `
         <button class="player-pill comp-winner-btn ${currentWinner === p.id ? 'selected' : ''}"
@@ -1549,6 +1549,16 @@ function renderCompetitionSection(players, hole, round) {
         —
       </button>
     </div>
+    ${currentWinner ? `
+      <div style="margin-top:7px;display:flex;align-items:center;gap:7px;">
+        <span style="font-size:11px;color:var(--muted);flex-shrink:0;">Distance:</span>
+        <input type="text" class="comp-distance-input"
+          data-distfield="${fieldName}Distance" data-hole="${hole.hole}"
+          value="${distanceValue || ''}"
+          placeholder="${distancePlaceholder}"
+          style="flex:1;font-size:12px;padding:5px 8px;height:auto;">
+      </div>
+    ` : ''}
   `;
 
   return `
@@ -1565,21 +1575,21 @@ function renderCompetitionSection(players, hole, round) {
       ${isLDHole ? `
         <div style="margin-bottom:12px;padding:10px;background:rgba(212,168,67,0.07);border:1px solid rgba(212,168,67,0.2);border-radius:8px;">
           <div style="font-size:10px;letter-spacing:0.1em;color:var(--gold);margin-bottom:2px;">LONGEST DRIVE WINNER · +3 pts · must land in fairway</div>
-          ${winnerPills(ldWinner, 'longestDrive')}
+          ${winnerPills(ldWinner, 'longestDrive', holeComp.longestDriveDistance, 'e.g. 245 yards')}
         </div>
       ` : ''}
 
       ${hole.par === 3 ? `
         <div style="margin-bottom:12px;padding:10px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.2);border-radius:8px;">
           <div style="font-size:10px;letter-spacing:0.1em;color:var(--birdie);margin-bottom:2px;">NEAREST THE PIN (Par 3) · +2 pts · must be on green</div>
-          ${winnerPills(ntpWinner, 'nearestPin')}
+          ${winnerPills(ntpWinner, 'nearestPin', holeComp.nearestPinDistance, 'e.g. 6 feet')}
         </div>
       ` : ''}
 
       ${hole.par === 4 ? `
         <div style="margin-bottom:12px;padding:10px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.2);border-radius:8px;">
           <div style="font-size:10px;letter-spacing:0.1em;color:var(--birdie);margin-bottom:2px;">NEAREST PIN IN 2 (Par 4) · +2 pts · second shot must be on green</div>
-          ${winnerPills(ntp2Winner, 'nearestPinInTwo')}
+          ${winnerPills(ntp2Winner, 'nearestPinInTwo', holeComp.nearestPinInTwoDistance, 'e.g. 12 feet')}
         </div>
       ` : ''}
 
@@ -1642,6 +1652,15 @@ function bindCompetitionSection(players, hole, round) {
       const { field, hole: holeNum, pid } = btn.dataset;
       await update(ref(db, `${roomPath(state.roomCode)}/competition/holes/${holeNum}`), { [field]: pid || null });
     };
+  });
+
+  document.querySelectorAll('.comp-distance-input').forEach(inp => {
+    inp.onchange = async () => {
+      const { distfield, hole: holeNum } = inp.dataset;
+      const val = inp.value.trim() || null;
+      await update(ref(db, `${roomPath(state.roomCode)}/competition/holes/${holeNum}`), { [distfield]: val });
+    };
+    inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
   });
 
   const toggleBtn = document.getElementById('toggle-penalties-btn');
@@ -1831,11 +1850,13 @@ function renderLeaderboard(root) {
           const competition = round.competition || {};
           const pScores = scores[p.id] || {};
           const twos = Object.values(pScores).filter(s => s === 2).length;
-          let ldWins = 0, ntpWins = 0, ntp2Wins = 0;
+          let ldWins = 0, ldDistance = '';
+          let ntpWins = 0, ntpDistances = [];
+          let ntp2Wins = 0, ntp2Distances = [];
           for (const hc of Object.values(competition.holes || {})) {
-            if (hc.longestDrive === p.id) ldWins++;
-            if (hc.nearestPin === p.id) ntpWins++;
-            if (hc.nearestPinInTwo === p.id) ntp2Wins++;
+            if (hc.longestDrive === p.id) { ldWins++; if (hc.longestDriveDistance) ldDistance = hc.longestDriveDistance; }
+            if (hc.nearestPin === p.id) { ntpWins++; if (hc.nearestPinDistance) ntpDistances.push(hc.nearestPinDistance); }
+            if (hc.nearestPinInTwo === p.id) { ntp2Wins++; if (hc.nearestPinInTwoDistance) ntp2Distances.push(hc.nearestPinInTwoDistance); }
           }
           const pen = competition.penalties?.[p.id] || {};
           const stdPenTotal = PENALTY_TYPES.reduce((s, { key }) => s + (pen[key] || 0), 0);
@@ -1853,9 +1874,9 @@ function renderLeaderboard(root) {
               </div>
               ${hasData ? `<div style="font-size:11px;color:var(--muted);display:flex;flex-wrap:wrap;gap:5px;">
                 ${twos > 0 ? `<span style="color:var(--green-accent);">+${twos * 5} (${twos}× score 2)</span>` : ''}
-                ${ldWins > 0 ? `<span style="color:var(--gold);">+${ldWins * 3} longest drive</span>` : ''}
-                ${ntpWins > 0 ? `<span style="color:var(--birdie);">+${ntpWins * 2} nearest pin</span>` : ''}
-                ${ntp2Wins > 0 ? `<span style="color:var(--birdie);">+${ntp2Wins * 2} nearest pin in 2</span>` : ''}
+                ${ldWins > 0 ? `<span style="color:var(--gold);">+${ldWins * 3} longest drive${ldDistance ? ` · ${ldDistance}` : ''}</span>` : ''}
+                ${ntpWins > 0 ? `<span style="color:var(--birdie);">+${ntpWins * 2} nearest pin${ntpDistances.length ? ` · ${ntpDistances.join(', ')}` : ''}</span>` : ''}
+                ${ntp2Wins > 0 ? `<span style="color:var(--birdie);">+${ntp2Wins * 2} nearest pin in 2${ntp2Distances.length ? ` · ${ntp2Distances.join(', ')}` : ''}</span>` : ''}
                 ${pinkPts > 0 ? `<span style="color:#ec4899;">+${pinkPts} pink ball</span>` : ''}
                 ${stdPenTotal > 0 ? `<span style="color:var(--danger);">−${stdPenTotal} penalties</span>` : ''}
                 ${lostBallPen !== 0 ? `<span style="color:var(--danger);">${lostBallPen} lost balls (${lostBalls})</span>` : lostBalls > 0 ? `<span style="color:var(--muted);">${lostBalls} balls lost (no pen yet)</span>` : ''}
