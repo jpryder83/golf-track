@@ -1550,6 +1550,7 @@ function renderCompetitionSection(players, hole, round) {
       </button>
     </div>
     ${currentWinner ? `
+      <div style="font-size:10px;color:var(--muted);margin-top:5px;padding-left:2px;">Tap another player to update &middot; tap — to clear</div>
       <div style="margin-top:7px;display:flex;align-items:center;gap:7px;">
         <span style="font-size:11px;color:var(--muted);flex-shrink:0;">Distance:</span>
         <input type="text" class="comp-distance-input"
@@ -1558,7 +1559,7 @@ function renderCompetitionSection(players, hole, round) {
           placeholder="${distancePlaceholder}"
           style="flex:1;font-size:12px;padding:5px 8px;height:auto;">
       </div>
-    ` : ''}
+    ` : '<div style="font-size:10px;color:var(--muted);margin-top:5px;padding-left:2px;">Tap a player to set the current leader</div>'}
   `;
 
   return `
