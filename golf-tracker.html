@@ -1125,6 +1125,33 @@ function renderSetup(root) {
         `}
       </div>
 
+      ${players.length >= 2 && isOwner ? `
+      <div class="card" style="margin-top:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div class="section-label" style="margin-bottom:0;">Playing Groups</div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn-sm" id="split-3-btn">Split 3s</button>
+            <button class="btn-sm" id="split-4-btn">Split 4s</button>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Assign players to groups — each group tracks its own pink ball.</div>
+        ${players.map(p => {
+          const gNum = (round.playerGroups || {})[p.id] || 1;
+          return `
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</span>
+            <div style="display:flex;gap:3px;flex-shrink:0;">
+              ${[1,2,3,4].map(g => `
+                <button class="player-pill grp-assign-btn ${gNum === g ? 'selected' : ''}"
+                  data-pid="${p.id}" data-grp="${g}"
+                  style="min-width:34px;padding:4px 8px;font-size:11px;">${g}</button>
+              `).join('')}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      ` : ''}
+
       ${isOwner ? `
         <button class="btn btn-primary" id="start-round-btn">Start Round →</button>
       ` : `
@@ -1192,6 +1219,18 @@ function renderSetup(root) {
     await update(ref(db, `${roomPath(state.roomCode)}/players/${playerId}`), { tee });
   };
 
+  // Playing group assignment buttons
+  document.querySelectorAll('.grp-assign-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const { pid, grp } = btn.dataset;
+      await update(ref(db, `${roomPath(state.roomCode)}/playerGroups`), { [pid]: parseInt(grp) });
+    };
+  });
+  const split3Btn = document.getElementById('split-3-btn');
+  const split4Btn = document.getElementById('split-4-btn');
+  if (split3Btn) split3Btn.onclick = () => autoSplitGroups(3);
+  if (split4Btn) split4Btn.onclick = () => autoSplitGroups(4);
+
   // Group member quick-add pills
   groupMembers.forEach(m => {
     const pill = document.getElementById(`gpill-${m.id}`);
@@ -1252,7 +1291,27 @@ async function startRound() {
   render();
 }
 
+async function autoSplitGroups(size) {
+  const players = Object.values(state.round.players || {})
+    .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+  const assignments = {};
+  players.forEach((p, i) => { assignments[p.id] = Math.floor(i / size) + 1; });
+  await update(ref(db, `${roomPath(state.roomCode)}/playerGroups`), assignments);
+}
+
 // ── Scoring view ──
+function getPlayingGroups(players, playerGroups) {
+  const grouped = {};
+  for (const p of players) {
+    const gNum = (playerGroups || {})[p.id] || 1;
+    if (!grouped[gNum]) grouped[gNum] = [];
+    grouped[gNum].push(p);
+  }
+  return Object.entries(grouped)
+    .sort(([a],[b]) => parseInt(a) - parseInt(b))
+    .map(([gNum, ps]) => ({ num: parseInt(gNum), players: ps }));
+}
+
 function renderScoring(root) {
   const round = state.round;
   const players = Object.values(round.players || {});
@@ -1260,6 +1319,9 @@ function renderScoring(root) {
   const scores = round.scores || {};
   const hole = holes[state.currentHole - 1];
   const totalPar = holes.reduce((a,h)=>a+h.par,0);
+  const playerGroups = round.playerGroups || {};
+  const playingGroups = getPlayingGroups(players, playerGroups);
+  const hasMultipleGroups = playingGroups.length > 1;
 
   // Dot status
   const dotClass = (h) => {
@@ -1305,21 +1367,34 @@ function renderScoring(root) {
       </div>
 
       <div id="score-entries">
-        ${players.map(p => renderScoreEntry(p, hole, scores, holes.length)).join('')}
+        ${hasMultipleGroups
+          ? playingGroups.map(g => `
+              <div style="font-size:10px;letter-spacing:0.12em;color:var(--muted);padding:8px 2px 4px;${g.num > 1 ? 'margin-top:4px;' : ''}">
+                GROUP ${g.num} &nbsp;·&nbsp; ${g.players.map(p=>p.name).join(', ')}
+              </div>
+              ${g.players.map(p => renderScoreEntry(p, hole, scores, holes.length)).join('')}
+            `).join('<div style="border-top:1px solid var(--border);margin:6px 0;"></div>')
+          : players.map(p => renderScoreEntry(p, hole, scores, holes.length)).join('')
+        }
       </div>
 
       ${renderCompetitionSection(players, hole, round)}
 
       <div class="card mt-14">
         <div class="section-label">Running Totals</div>
-        ${totals.map(p => `
+        ${totals.map(p => {
+          const gNum = playerGroups[p.id] || 1;
+          return `
           <div class="totals-row">
-            <span>${p.name} ${p.name===state.playerName?'<span style="font-size:10px;color:var(--green-accent);">(you)</span>':''}</span>
+            <span>
+              ${hasMultipleGroups ? `<span style="font-size:10px;color:var(--muted);margin-right:4px;">G${gNum}</span>` : ''}
+              ${p.name} ${p.name===state.playerName?'<span style="font-size:10px;color:var(--green-accent);">(you)</span>':''}
+            </span>
             <span style="color:var(--muted);">
               ${p.played > 0 ? `${p.gross} gross · <span style="color:${p.net<0?'#10b981':p.net===0?'var(--cream)':'#f97316'}">${p.net>=0?'+'+p.net:p.net}</span> net · <span style="color:var(--gold);">${p.hcpScore} hcp</span>` : '—'}
             </span>
-          </div>
-        `).join('')}
+          </div>`;
+        }).join('')}
       </div>
 
       <button class="btn btn-secondary mt-14" id="finish-btn">View Final Leaderboard →</button>
@@ -1386,41 +1461,38 @@ function getPlayerCRSlope(player, round) {
   return { cr: round.courseRating ?? null, slope: round.slopeRating ?? null };
 }
 
-function calcCompetitionPoints(playerId, round) {
+function calcCompetitionBreakdown(playerId, round) {
   const competition = round.competition || {};
   const scores = round.scores?.[playerId] || {};
-  let pts = 0;
+  let gained = 0, lost = 0;
 
-  // Score a 2 on any hole = +5 pts (auto from scores)
   for (const score of Object.values(scores)) {
-    if (score === 2) pts += 5;
+    if (score === 2) gained += 5;
   }
-
-  // Hole competition bonuses
   for (const holeComp of Object.values(competition.holes || {})) {
-    if (holeComp.longestDrive === playerId) pts += 3;
-    if (holeComp.nearestPin === playerId) pts += 2;
-    if (holeComp.nearestPinInTwo === playerId) pts += 2;
+    if (holeComp.longestDrive === playerId) gained += 3;
+    if (holeComp.nearestPin === playerId) gained += 2;
+    if (holeComp.nearestPinInTwo === playerId) gained += 2;
   }
 
-  // Pink ball returned = +2 each player
-  if (competition.pinkBall?.returned === true) pts += 2;
+  // Pink ball: always per-group; unassigned players default to group 1
+  const pinkGroupNum = (round.playerGroups || {})[playerId] || 1;
+  if (competition.pinkBall?.groups?.[`g${pinkGroupNum}`]?.returned) gained += 2;
 
-  // Standard -1 penalties
   const pen = competition.penalties?.[playerId] || {};
   for (const { key } of PENALTY_TYPES) {
-    pts -= (pen[key] || 0);
+    lost += (pen[key] || 0);
   }
+  const lostBalls = pen.lostBalls || 0;
+  if (lostBalls >= 6) lost += 4;
+  else if (lostBalls >= 3) lost += 2;
+  lost += (pen.notShoutingFore || 0) * 2;
 
-  // Escalating lost balls: 3+ = -2, 6+ = -4 (replaces, not additional)
-  const lost = pen.lostBalls || 0;
-  if (lost >= 6) pts -= 4;
-  else if (lost >= 3) pts -= 2;
+  return { gained, lost, net: gained - lost };
+}
 
-  // Not shouting fore: -2 each
-  pts -= (pen.notShoutingFore || 0) * 2;
-
-  return pts;
+function calcCompetitionPoints(playerId, round) {
+  return calcCompetitionBreakdown(playerId, round).net;
 }
 
 function calcSuggestedHandicap(differentials) {
@@ -1836,15 +1908,22 @@ function renderLeaderboard(root) {
       <div class="card mt-20">
         <div class="section-label" style="margin-bottom:12px;">Competition</div>
 
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:rgba(236,72,153,0.07);border:1px solid rgba(236,72,153,0.2);border-radius:8px;margin-bottom:14px;">
-          <div>
-            <div style="font-size:13px;">Pink Ball</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px;">Returned at end of round = +2 pts each player</div>
-          </div>
-          <button class="btn-sm ${round.competition?.pinkBall?.returned ? 'pink-active' : ''}" id="pink-ball-btn">
-            ${round.competition?.pinkBall?.returned ? '✓ Returned' : 'Not returned'}
-          </button>
-        </div>
+        ${getPlayingGroups(players, round.playerGroups || {}).map(g => {
+          const gId = `g${g.num}`;
+          const returned = round.competition?.pinkBall?.groups?.[gId]?.returned;
+          const names = g.players.map(p => p.name).join(', ');
+          const label = lb.length > g.players.length ? `Pink Ball · Group ${g.num}` : 'Pink Ball';
+          return `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:rgba(236,72,153,0.07);border:1px solid rgba(236,72,153,0.2);border-radius:8px;margin-bottom:8px;">
+            <div>
+              <div style="font-size:13px;">${label}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">${names} · returned = +2 pts each</div>
+            </div>
+            <button class="btn-sm pink-group-btn ${returned ? 'pink-active' : ''}" data-gid="${gId}">
+              ${returned ? '✓ Returned' : 'Not returned'}
+            </button>
+          </div>`;
+        }).join('')}
 
         <div class="section-label" style="margin-bottom:8px;">Points Breakdown</div>
         ${lb.map(p => {
@@ -1864,7 +1943,8 @@ function renderLeaderboard(root) {
           const lostBalls = pen.lostBalls || 0;
           const notFore = pen.notShoutingFore || 0;
           const lostBallPen = lostBalls >= 6 ? -4 : lostBalls >= 3 ? -2 : 0;
-          const pinkPts = competition.pinkBall?.returned ? 2 : 0;
+          const lbPGNum = (round.playerGroups || {})[p.id] || 1;
+          const pinkPts = competition.pinkBall?.groups?.[`g${lbPGNum}`]?.returned ? 2 : 0;
           const total = p.compPts;
           const hasData = twos > 0 || ldWins > 0 || ntpWins > 0 || ntp2Wins > 0 || pinkPts > 0 || stdPenTotal > 0 || lostBalls > 0 || notFore > 0;
           return `
@@ -1905,13 +1985,13 @@ function renderLeaderboard(root) {
     };
   });
 
-  const pinkBtn = document.getElementById('pink-ball-btn');
-  if (pinkBtn) {
-    pinkBtn.onclick = async () => {
-      const current = state.round.competition?.pinkBall?.returned;
-      await update(ref(db, `${roomPath(state.roomCode)}/competition/pinkBall`), { returned: !current });
+  document.querySelectorAll('.pink-group-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const gId = btn.dataset.gid;
+      const current = state.round.competition?.pinkBall?.groups?.[gId]?.returned;
+      await update(ref(db, `${roomPath(state.roomCode)}/competition/pinkBall/groups/${gId}`), { returned: !current });
     };
-  }
+  });
 
   const navScoring = document.getElementById('nav-scoring');
   if (navScoring) navScoring.onclick = () => { state.view='scoring'; render(); };
@@ -2269,16 +2349,17 @@ async function loadTournamentRankings(roundCodes) {
         sf += stableford;
       }
 
-      const compPts = calcCompetitionPoints(player.id, round);
-
+      const breakdown = calcCompetitionBreakdown(player.id, round);
       const key = player.name.toLowerCase();
       if (!playerMap.has(key)) {
-        playerMap.set(key, { name: player.name, rounds: 0, totalSF: 0, bestSF: -Infinity, totalComp: 0 });
+        playerMap.set(key, { name: player.name, rounds: 0, totalSF: 0, bestSF: -Infinity, totalComp: 0, totalCompGained: 0, totalCompLost: 0 });
       }
       const entry = playerMap.get(key);
       entry.rounds++;
       entry.totalSF += sf;
-      entry.totalComp += compPts;
+      entry.totalComp += breakdown.net;
+      entry.totalCompGained += breakdown.gained;
+      entry.totalCompLost += breakdown.lost;
       if (sf > entry.bestSF) entry.bestSF = sf;
     }
   }
@@ -2422,10 +2503,10 @@ function renderTournamentDetail(root) {
             <tr style="color:var(--muted);text-align:left;border-bottom:1px solid var(--border);">
               <th style="padding:6px 4px;">#</th>
               <th style="padding:6px 4px;">Player</th>
-              <th style="padding:6px 4px;text-align:center;">Rounds</th>
+              <th style="padding:6px 4px;text-align:center;">Rnds</th>
               <th style="padding:6px 4px;text-align:center;">Total SF</th>
               <th style="padding:6px 4px;text-align:center;">Best SF</th>
-              <th style="padding:6px 4px;text-align:center;">Comp</th>
+              <th style="padding:6px 4px;text-align:center;">Comp (net)</th>
             </tr>
           </thead>
           <tbody>
@@ -2436,7 +2517,10 @@ function renderTournamentDetail(root) {
                 <td style="padding:8px 4px;text-align:center;color:var(--muted);">${p.rounds}</td>
                 <td style="padding:8px 4px;text-align:center;color:var(--green-accent);font-weight:700;">${p.totalSF}</td>
                 <td style="padding:8px 4px;text-align:center;color:var(--gold);">${p.bestSF}</td>
-                <td style="padding:8px 4px;text-align:center;color:${p.totalComp > 0 ? 'var(--gold)' : p.totalComp < 0 ? 'var(--danger)' : 'var(--muted)'};">${p.totalComp >= 0 ? '+' : ''}${p.totalComp}</td>
+                <td style="padding:8px 4px;text-align:center;">
+                  <div style="font-weight:700;color:${p.totalComp > 0 ? 'var(--gold)' : p.totalComp < 0 ? 'var(--danger)' : 'var(--muted)'};">${p.totalComp >= 0 ? '+' : ''}${p.totalComp}</div>
+                  ${(p.totalCompGained > 0 || p.totalCompLost > 0) ? `<div style="font-size:10px;white-space:nowrap;margin-top:2px;">${p.totalCompGained > 0 ? `<span style="color:var(--gold);">+${p.totalCompGained}</span>` : ''}${p.totalCompLost > 0 ? `<span style="color:var(--danger);"> −${p.totalCompLost}</span>` : ''}</div>` : ''}
+                </td>
               </tr>
             `).join('')}
           </tbody>
