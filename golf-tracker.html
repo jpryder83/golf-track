@@ -854,7 +854,7 @@ function goBackFromRound() {
   window.history.replaceState({}, '', url);
   state.roomCode = null; state.playerName = null; state.round = null;
   state.currentHole = 1; state.editingHoles = false;
-  state.view = state.groupCode ? 'group-home' : 'join';
+  state.view = state.tournamentId ? 'tournament-detail' : (state.groupCode ? 'group-home' : 'join');
   render();
 }
 
@@ -1132,7 +1132,7 @@ function renderSetup(root) {
           Waiting for someone to start the round...
         </div>
       `}
-      <button class="btn btn-secondary mt-8" id="back-btn">← ${state.groupCode ? 'Back to Group' : 'Back to Home'}</button>
+      <button class="btn btn-secondary mt-8" id="back-btn">← ${state.tournamentId ? 'Back to Tournament' : (state.groupCode ? 'Back to Group' : 'Back to Home')}</button>
       <button class="btn mt-8" id="delete-round-btn"
         style="background:none;border:1px solid rgba(255,100,100,0.25);color:rgba(255,100,100,0.5);font-size:13px;">
         Delete Round
@@ -1285,7 +1285,7 @@ function renderScoring(root) {
   root.innerHTML = `
     <div class="fade-in">
       <div class="nav">
-        <button class="nav-btn" id="nav-back">← ${state.groupCode ? 'Group' : 'Home'}</button>
+        <button class="nav-btn" id="nav-back">← ${state.tournamentId ? 'Tournament' : (state.groupCode ? 'Group' : 'Home')}</button>
         <button class="nav-btn active">Scoring</button>
         <button class="nav-btn" id="nav-lb">Leaderboard</button>
       </div>
@@ -1719,7 +1719,7 @@ function renderLeaderboard(root) {
   root.innerHTML = `
     <div class="fade-in">
       <div class="nav">
-        <button class="nav-btn" id="nav-back">← ${state.groupCode ? 'Group' : 'Home'}</button>
+        <button class="nav-btn" id="nav-back">← ${state.tournamentId ? 'Tournament' : (state.groupCode ? 'Group' : 'Home')}</button>
         <button class="nav-btn" id="nav-scoring">Scoring</button>
         <button class="nav-btn active">Leaderboard</button>
       </div>
