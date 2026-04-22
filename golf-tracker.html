@@ -1677,6 +1677,8 @@ function renderCompetitionSection(players, hole, round) {
   const competition = round.competition || {};
   const ldHole = competition.longestDriveHole || null;
   const isLDHole = ldHole === hole.hole;
+  const ntp2Hole = competition.nearestPinInTwoHole || null;
+  const isNTP2Hole = ntp2Hole === hole.hole;
   const holeComp = competition.holes?.[hole.hole] || {};
   const ldWinner = holeComp.longestDrive || null;
   const ntpWinner = holeComp.nearestPin || null;
@@ -1743,10 +1745,18 @@ function renderCompetitionSection(players, hole, round) {
       ` : ''}
 
       ${hole.par === 4 ? `
-        <div style="margin-bottom:12px;padding:10px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.2);border-radius:8px;">
-          <div style="font-size:10px;letter-spacing:0.1em;color:var(--birdie);margin-bottom:2px;">NEAREST PIN IN 2 (Par 4) · +2 pts · second shot must be on green</div>
-          ${winnerPills(ntp2Winner, 'nearestPinInTwo', holeComp.nearestPinInTwoDistance, 'e.g. 12 feet')}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${isNTP2Hole ? 8 : 10}px;">
+          <span style="font-size:13px;">Nearest Pin in 2 Hole</span>
+          <button class="btn-sm" id="ntp2-hole-btn" style="${isNTP2Hole ? 'color:var(--birdie);border-color:rgba(59,130,246,0.4);background:rgba(59,130,246,0.1);' : ''}">
+            ${isNTP2Hole ? '★ This hole' : 'Set this hole'}
+          </button>
         </div>
+        ${isNTP2Hole ? `
+          <div style="margin-bottom:12px;padding:10px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.2);border-radius:8px;">
+            <div style="font-size:10px;letter-spacing:0.1em;color:var(--birdie);margin-bottom:2px;">NEAREST PIN IN 2 (Par 4) · +2 pts · second shot must be on green</div>
+            ${winnerPills(ntp2Winner, 'nearestPinInTwo', holeComp.nearestPinInTwoDistance, 'e.g. 12 feet')}
+          </div>
+        ` : ''}
       ` : ''}
 
       <button class="btn-sm" id="toggle-penalties-btn" style="width:100%;text-align:left;padding:8px 12px;">
@@ -1808,12 +1818,21 @@ function renderPenaltiesPanel(players, competition) {
 function bindCompetitionSection(players, hole, round) {
   const competition = round.competition || {};
   const isLDHole = competition.longestDriveHole === hole.hole;
+  const isNTP2Hole = competition.nearestPinInTwoHole === hole.hole;
 
   const ldBtn = document.getElementById('ld-hole-btn');
   if (ldBtn) {
     ldBtn.onclick = async () => {
       const newVal = isLDHole ? null : hole.hole;
       await update(ref(db, `${roomPath(state.roomCode)}/competition`), { longestDriveHole: newVal });
+    };
+  }
+
+  const ntp2Btn = document.getElementById('ntp2-hole-btn');
+  if (ntp2Btn) {
+    ntp2Btn.onclick = async () => {
+      const newVal = isNTP2Hole ? null : hole.hole;
+      await update(ref(db, `${roomPath(state.roomCode)}/competition`), { nearestPinInTwoHole: newVal });
     };
   }
 
