@@ -1405,6 +1405,15 @@ function renderScoring(root) {
   const playerGroups = round.playerGroups || {};
   const playingGroups = getPlayingGroups(players, playerGroups);
   const hasMultipleGroups = playingGroups.length > 1;
+  const currentPlayerName = state.playerName || state.groupPlayerName;
+  const orderedGroups = hasMultipleGroups && currentPlayerName
+    ? (() => {
+        const groups = [...playingGroups];
+        const myIdx = groups.findIndex(g => g.players.some(p => p.name === currentPlayerName));
+        if (myIdx > 0) { const [mine] = groups.splice(myIdx, 1); groups.unshift(mine); }
+        return groups;
+      })()
+    : playingGroups;
 
   // Dot status
   const dotClass = (h) => {
@@ -1451,7 +1460,7 @@ function renderScoring(root) {
 
       <div id="score-entries">
         ${hasMultipleGroups
-          ? playingGroups.map(g => `
+          ? orderedGroups.map(g => `
               <div style="font-size:10px;letter-spacing:0.12em;color:var(--muted);padding:8px 2px 4px;${g.num > 1 ? 'margin-top:4px;' : ''}">
                 GROUP ${g.num} &nbsp;·&nbsp; ${g.players.map(p=>p.name).join(', ')}
               </div>
