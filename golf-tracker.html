@@ -1171,7 +1171,7 @@ function renderSetup(root) {
                 <span class="player-hcp">HCP</span>
                 ${canEdit ? `
                   <input type="number" id="hcp-${p.id}" value="${p.handicap}" min="0" max="54" step="0.1"
-                    style="width:60px;padding:4px 6px;font-size:13px;" oninput="window._updateHcp('${p.id}', this.value)">
+                    style="width:60px;padding:4px 6px;font-size:13px;" onchange="window._updateHcp('${p.id}', this.value)">
                 ` : `<span class="player-hcp">${p.handicap}</span>`}
               </div>
             </div>`;
