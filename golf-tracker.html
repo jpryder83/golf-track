@@ -1302,6 +1302,27 @@ function renderSetup(root) {
     await update(ref(db, `${roomPath(state.roomCode)}/players/${playerId}`), { tee });
   };
 
+  window._fixRoundPars = async (roomCode) => {
+    const COSTA_ADEJE_PARS = [
+      { hole:1,  par:5, si:5  }, { hole:2,  par:3, si:17 }, { hole:3,  par:5, si:13 },
+      { hole:4,  par:4, si:7  }, { hole:5,  par:3, si:15 }, { hole:6,  par:4, si:9  },
+      { hole:7,  par:3, si:3  }, { hole:8,  par:5, si:11 }, { hole:9,  par:4, si:1  },
+      { hole:10, par:3, si:4  }, { hole:11, par:5, si:12 }, { hole:12, par:4, si:8  },
+      { hole:13, par:5, si:14 }, { hole:14, par:3, si:10 }, { hole:15, par:4, si:6  },
+      { hole:16, par:3, si:18 }, { hole:17, par:4, si:2  }, { hole:18, par:5, si:16 },
+    ];
+    const snap = await get(ref(db, roomPath(roomCode)));
+    if (!snap.exists()) { console.error('Round not found:', roomCode); return; }
+    const round = snap.val();
+    const existing = round.holes || [];
+    const updated = COSTA_ADEJE_PARS.map(fix => {
+      const curr = existing.find(h => h.hole === fix.hole) || {};
+      return { ...curr, hole: fix.hole, par: fix.par, si: fix.si };
+    });
+    await update(ref(db, roomPath(roomCode)), { holes: updated });
+    console.log(`Round ${roomCode} pars updated. Holes:`, updated.map(h => `H${h.hole} par${h.par} si${h.si}`).join(', '));
+  };
+
   // Playing group assignment buttons
   document.querySelectorAll('.grp-assign-btn').forEach(btn => {
     btn.onclick = async () => {
@@ -1905,6 +1926,8 @@ function renderLeaderboard(root) {
   const holes = round.holes || DEFAULT_HOLES;
   const scores = round.scores || {};
   const totalPar = holes.reduce((a,h)=>a+h.par,0);
+  const isOwner = players.length === 0 || players.some(p => p.name === state.playerName);
+  const canSyncPars = isOwner && round.courseKey && COURSES[round.courseKey];
 
   const lb = players.map(p => {
     const tee = p.tee || 'yellow';
@@ -2110,6 +2133,7 @@ function renderLeaderboard(root) {
       </div>
 
       <button class="btn btn-secondary mt-14" id="new-round-btn">Start New Round</button>
+      ${canSyncPars ? `<button class="btn btn-secondary mt-8" id="sync-pars-btn" style="font-size:13px;">Sync pars from course</button>` : ''}
       <button class="btn mt-8" id="delete-round-btn"
         style="background:none;border:1px solid rgba(255,100,100,0.25);color:rgba(255,100,100,0.5);font-size:13px;">
         Delete Round
@@ -2138,6 +2162,20 @@ function renderLeaderboard(root) {
   if (navScoring) navScoring.onclick = () => { state.view='scoring'; render(); };
   document.getElementById('nav-back').onclick = () => goBackFromRound();
   document.getElementById('delete-round-btn').onclick = () => deleteRound(state.roomCode, state.groupCode);
+
+  const syncBtn = document.getElementById('sync-pars-btn');
+  if (syncBtn) syncBtn.onclick = async () => {
+    if (!confirm(`Sync par and stroke index for all 18 holes from the ${round.courseName} course definition?`)) return;
+    syncBtn.disabled = true; syncBtn.textContent = 'Syncing…';
+    const courseDef = COURSES[round.courseKey];
+    const updated = courseDef.holes.map(defHole => {
+      const curr = holes.find(h => h.hole === defHole.hole) || {};
+      return { ...curr, hole: defHole.hole, par: defHole.par, si: defHole.si };
+    });
+    await update(ref(db, roomPath(state.roomCode)), { holes: updated });
+    syncBtn.textContent = 'Done ✓';
+  };
+
   document.getElementById('new-round-btn').onclick = () => {
     if (unsubscribe) unsubscribe();
     const url = new URL(window.location);
