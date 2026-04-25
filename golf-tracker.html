@@ -1926,6 +1926,8 @@ function renderLeaderboard(root) {
   const holes = round.holes || DEFAULT_HOLES;
   const scores = round.scores || {};
   const totalPar = holes.reduce((a,h)=>a+h.par,0);
+  const isOwner = players.length === 0 || players.some(p => p.name === state.playerName);
+  const canSyncPars = isOwner && round.courseKey && COURSES[round.courseKey];
 
   const lb = players.map(p => {
     const tee = p.tee || 'yellow';
@@ -2131,6 +2133,7 @@ function renderLeaderboard(root) {
       </div>
 
       <button class="btn btn-secondary mt-14" id="new-round-btn">Start New Round</button>
+      ${canSyncPars ? `<button class="btn btn-secondary mt-8" id="sync-pars-btn" style="font-size:13px;">Sync pars from course</button>` : ''}
       <button class="btn mt-8" id="delete-round-btn"
         style="background:none;border:1px solid rgba(255,100,100,0.25);color:rgba(255,100,100,0.5);font-size:13px;">
         Delete Round
@@ -2159,6 +2162,20 @@ function renderLeaderboard(root) {
   if (navScoring) navScoring.onclick = () => { state.view='scoring'; render(); };
   document.getElementById('nav-back').onclick = () => goBackFromRound();
   document.getElementById('delete-round-btn').onclick = () => deleteRound(state.roomCode, state.groupCode);
+
+  const syncBtn = document.getElementById('sync-pars-btn');
+  if (syncBtn) syncBtn.onclick = async () => {
+    if (!confirm(`Sync par and stroke index for all 18 holes from the ${round.courseName} course definition?`)) return;
+    syncBtn.disabled = true; syncBtn.textContent = 'Syncing…';
+    const courseDef = COURSES[round.courseKey];
+    const updated = courseDef.holes.map(defHole => {
+      const curr = holes.find(h => h.hole === defHole.hole) || {};
+      return { ...curr, hole: defHole.hole, par: defHole.par, si: defHole.si };
+    });
+    await update(ref(db, roomPath(state.roomCode)), { holes: updated });
+    syncBtn.textContent = 'Done ✓';
+  };
+
   document.getElementById('new-round-btn').onclick = () => {
     if (unsubscribe) unsubscribe();
     const url = new URL(window.location);
